@@ -5,7 +5,7 @@
 #endif
 
 #ifndef DEVICE_NAME_DEFAULT
-#define DEVICE_NAME_DEFAULT "RF Monitor"
+#define DEVICE_NAME_DEFAULT "RF-Monitor"
 #endif
 
 #ifndef HUB_HOST_DEFAULT
