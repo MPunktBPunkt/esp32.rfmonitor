@@ -43,6 +43,12 @@ private:
     uint8_t channelLoad_ = 0;
     uint8_t density_ = 0;
     uint8_t stability_ = 100;
+    uint8_t penRssi_ = 0;
+    uint8_t penJitter_ = 0;
+    uint8_t penCongestion_ = 0;
+    uint8_t penDensity_ = 0;
+    uint8_t penStability_ = 0;
+    uint8_t penDisconnect_ = 0;
     unsigned long lastCompute_ = 0;
     int8_t rssiWindow_[12] = {0};
     uint8_t rssiCount_ = 0;

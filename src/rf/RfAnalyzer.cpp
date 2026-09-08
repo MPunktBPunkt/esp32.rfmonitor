@@ -79,13 +79,14 @@ void RfAnalyzer::recompute() {
     channelLoad_ = occupied >= 13 ? 100 : (uint8_t)(occupied * 8);
     density_ = aps >= 20 ? 80 : (uint8_t)(aps * 4);
 
-    int score = 100;
-    if (rssi < -55) score -= (int)((-55 - rssi) * 1.2f);
-    if (rssiJitter_ > 8) score -= (int)((rssiJitter_ - 8) * 2);
-    score -= congestion_ / 4;
-    score -= density_ / 6;
-    score -= (100 - stability_) / 3;
-    if (WiFi.status() != WL_CONNECTED) score -= 25;
+    penRssi_ = rssi < -55 ? (uint8_t)((-55 - rssi) * 1.2f) : 0;
+    penJitter_ = rssiJitter_ > 8 ? (uint8_t)((rssiJitter_ - 8) * 2) : 0;
+    penCongestion_ = congestion_ / 4;
+    penDensity_ = density_ / 6;
+    penStability_ = (100 - stability_) / 3;
+    penDisconnect_ = WiFi.status() != WL_CONNECTED ? 25 : 0;
+    int score = 100 - (int)penRssi_ - (int)penJitter_ - (int)penCongestion_
+                - (int)penDensity_ - (int)penStability_ - (int)penDisconnect_;
     if (score < 0) score = 0;
     if (score > 100) score = 100;
     uint8_t prev = score_;
@@ -127,6 +128,13 @@ void RfAnalyzer::appendStatusJson(JsonObject target) const {
     target["apDensity"] = density_;
     target["stability"] = stability_;
     target["disconnects"] = disconnects_;
+    JsonObject parts = target["scoreParts"].to<JsonObject>();
+    parts["rssi"] = penRssi_;
+    parts["jitter"] = penJitter_;
+    parts["congestion"] = penCongestion_;
+    parts["density"] = penDensity_;
+    parts["stability"] = penStability_;
+    parts["disconnect"] = penDisconnect_;
     if (scanner_) {
         target["apCount"] = scanner_->apCount();
         target["knownApCount"] = scanner_->knownCount();

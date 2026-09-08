@@ -1,6 +1,6 @@
 # esp32.rfmonitor
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.1.0-blue)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Build](https://github.com/MPunktBPunkt/esp32.rfmonitor/actions/workflows/build.yml/badge.svg)](https://github.com/MPunktBPunkt/esp32.rfmonitor/actions/workflows/build.yml)
 [![Donate](https://img.shields.io/badge/Donate-PayPal-00457C.svg?logo=paypal)](https://www.paypal.com/donate/?business=martin%40bchmnn.de&currency_code=EUR)
@@ -22,15 +22,15 @@
 
 ---
 
-## Features v1.0
+## Features v1.1
 
 - WiFiManager-Setup (`ESP-RFMonitor-Setup`)
 - Periodischer **WLAN-Scan** (SSID, BSSID, RSSI, Kanal, Auth, bekannt/unbekannt)
 - Periodischer **BLE-Scan** (NimBLE) inkl. generischer Beacon-Erkennung (iBeacon / Eddystone)
-- **RF-Score 0–100** aus RSSI, Jitter, Kanalüberlastung, AP-Dichte, Stabilität
+- **RF-Score 0–100** aus RSSI, Jitter, Kanalüberlastung, AP-Dichte, Stabilität inkl. **Score-Breakdown**
 - Ringbuffer-History: RSSI, RF-Score, AP-Count, BLE-Count
 - Ereignislog (`wifi.new_ap`, `ble.new_device`, `rf.score_low`, …)
-- Web-UI mit Charts, SSE-Live-Status, Config und Wizard
+- Lab-Web-UI: Gauge, Kanal-Heatmap, Charts, Event-Terminal, SSE, Config (ohne Setup-Wizard)
 - ESP-Hub Heartbeat inkl. RF-Metriken, Web-OTA und Hub-OTA
 - Betriebsmodi: Live, Normal, Diagnose
 
@@ -55,7 +55,7 @@ pio device monitor
 ```
 
 1. Hotspot `ESP-RFMonitor-Setup` → WLAN + Hub-IP
-2. Browser: `http://<ESP-IP>/` → Setup-Wizard
+2. Browser: `http://<ESP-IP>/` → Monitor-UI (Config-Tab für Name/Intervalle)
 3. Gerät erscheint im [ESP-Hub](https://github.com/MPunktBPunkt/iobroker.esp-hub)
 
 ---

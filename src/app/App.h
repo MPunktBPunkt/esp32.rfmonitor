@@ -37,7 +37,6 @@ private:
     void setupWeb();
     void registerRoutes();
     void handleRoot();
-    void handleWizard();
     void handleMain();
     void handleOtaUpload();
     void handleOtaUploadFinish();

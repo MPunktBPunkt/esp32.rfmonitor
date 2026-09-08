@@ -1,7 +1,6 @@
 #include "App.h"
 #include "core/NetUtil.h"
 #include "web/UiPages.h"
-#include "web/UiWizard.h"
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include <ESPmDNS.h>
@@ -171,16 +170,7 @@ void App::handleMain() {
 }
 
 void App::handleRoot() {
-    if (!config.firstRunDone) {
-        server.sendHeader(F("Location"), F("/wizard"), true);
-        server.send(302, F("text/plain"), F(""));
-        return;
-    }
     handleMain();
-}
-
-void App::handleWizard() {
-    server.send_P(200, "text/html", PAGE_WIZARD);
 }
 
 void App::handleOtaUpload() {
@@ -215,7 +205,6 @@ void App::registerRoutes() {
     server.on("/eventlog", HTTP_GET, [this]() { handleMain(); });
     server.on("/config", HTTP_GET, [this]() { handleMain(); });
     server.on("/ota", HTTP_GET, [this]() { handleMain(); });
-    server.on("/wizard", HTTP_GET, [this]() { handleWizard(); });
     server.on("/ota-upload", HTTP_POST, [this]() { handleOtaUploadFinish(); }, [this]() { handleOtaUpload(); });
 
     server.on("/api/status", HTTP_GET, [this]() {

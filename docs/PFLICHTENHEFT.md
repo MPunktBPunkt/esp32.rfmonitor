@@ -1,16 +1,16 @@
-# Pflichtenheft `esp32.rfmonitor` v1.0
+# Pflichtenheft `esp32.rfmonitor` v1.1
 
 Eigenständiger ESP32-Knoten zur permanenten Beobachtung der lokalen Funkumgebung. Baut auf `esp-hub-base` auf, ist **kein** Teil von `esp32.toolnode`.
 
-## Muss (v1.0)
+## Muss (v1.1)
 
 - Basis: WiFiManager, Preferences, Web-UI, SSE, OTA, Heartbeat, Watchdog
 - WLAN-Scan, BLE-Scan, generische Beacon-Anzeige
-- RF-Score 0–100 (dokumentierte Heuristik)
+- RF-Score 0–100 (dokumentierte Heuristik) inkl. Breakdown
 - RSSI-/Score-/AP-/BLE-History als Ringbuffer
-- Web-UI mit RSSI-Chart
+- Lab-Web-UI mit Gauge, Heatmap, Charts, Event-Terminal
 - Eventlog und Hub-IO-Metriken
-- Config-Seite und First-Run-Wizard
+- Config-Seite (kein Setup-Wizard)
 
 ## Kann später
 
