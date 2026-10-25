@@ -156,12 +156,40 @@ void BleTracker::noteFail() {
     }
 }
 
+void BleTracker::finishWindow(bool ok) {
+#if RFMON_ENABLE_BLE
+    if (!ready_) {
+        scanning_ = false;
+        return;
+    }
+    NimBLEScan* scan = NimBLEDevice::getScan();
+    if (scan->isScanning()) scan->stop();
+#endif
+    if (!scanning_) return;
+    uint32_t dur = millis() - windowStart_;
+    lastDurationMs_ = dur;
+    totalBusyMs_ += dur;
+    scanning_ = false;
+    lastStart_ = millis();
+    if (ok) {
+        lastScanTs_ = millis() / 1000UL;
+        successCount_++;
+        prune();
+        if (history_) history_->push(HistoryStore::BLE_COUNT, (float)count_);
+    } else {
+        noteFail();
+    }
+}
+
 bool BleTracker::startWindow() {
 #if RFMON_ENABLE_BLE
     if (!ready_ || !cfg_ || !cfg_->bleEnabled) return false;
     if (scanning_) return false;
     NimBLEScan* scan = NimBLEDevice::getScan();
-    if (scan->isScanning()) return false;
+    if (scan->isScanning()) {
+        // Stale controller state from a previous hang — clear before retry.
+        scan->stop();
+    }
     attemptCount_++;
     newCount_ = 0;
     uint32_t dur = 4;
@@ -179,17 +207,27 @@ bool BleTracker::startWindow() {
 }
 
 void BleTracker::stop() {
+    // Preempt without counting as success (WiFi wants the radio).
+    if (!scanning_) {
 #if RFMON_ENABLE_BLE
-    if (!ready_) return;
-    NimBLEScan* scan = NimBLEDevice::getScan();
-    if (scan->isScanning()) scan->stop();
+        if (ready_) {
+            NimBLEScan* scan = NimBLEDevice::getScan();
+            if (scan->isScanning()) scan->stop();
+        }
 #endif
-    if (scanning_) {
-        uint32_t dur = millis() - windowStart_;
-        lastDurationMs_ = dur;
-        totalBusyMs_ += dur;
+        return;
     }
+#if RFMON_ENABLE_BLE
+    if (ready_) {
+        NimBLEScan* scan = NimBLEDevice::getScan();
+        if (scan->isScanning()) scan->stop();
+    }
+#endif
+    uint32_t dur = millis() - windowStart_;
+    lastDurationMs_ = dur;
+    totalBusyMs_ += dur;
     scanning_ = false;
+    lastStart_ = millis();
 }
 
 bool BleTracker::due() const {
@@ -231,15 +269,17 @@ void BleTracker::loop(bool mayStart) {
         }
     }
     NimBLEScan* scan = NimBLEDevice::getScan();
-    if (scanning_ && !scan->isScanning()) {
-        uint32_t dur = millis() - windowStart_;
-        lastDurationMs_ = dur;
-        totalBusyMs_ += dur;
-        lastScanTs_ = millis() / 1000UL;
-        successCount_++;
-        scanning_ = false;
-        prune();
-        if (history_) history_->push(HistoryStore::BLE_COUNT, (float)count_);
+    if (scanning_) {
+        // Mini (and occasionally S3) can leave isScanning() stuck true forever,
+        // which previously blocked all WiFi scans via App::tickScans.
+        bool controllerActive = scan->isScanning();
+        bool timedOut = (millis() - windowStart_ >= kWindowTimeoutMs);
+        if (!controllerActive) {
+            finishWindow(true);
+        } else if (timedOut) {
+            Serial.println("[BLE] scan window timeout — force stop");
+            finishWindow(false);
+        }
     }
     if (millis() - lastPrune_ >= 15000UL) {
         lastPrune_ = millis();

@@ -1,0 +1,95 @@
+{
+  "valid": true,
+  "capturing": false,
+  "captureProgressPct": 0,
+  "captureSamples": 76,
+  "captureTargetS": 300,
+  "deviation": 2,
+  "deviationVersion": 1,
+  "profileVersion": 2,
+  "stale": false,
+  "capturedAtS": 452,
+  "capturedAtUptimeS": 452,
+  "capturedAtEpochS": 1792945555,
+  "capturedTimeValid": true,
+  "sampleCount": 76,
+  "baselineAgeS": 525,
+  "baseline": {
+    "score": 93.19736,
+    "density": 15.73684,
+    "channelPressure": 19.34211,
+    "channelOccupancy": 24,
+    "apCount": 3.934211,
+    "bleCount": 4.052631,
+    "ownRssi": -31.98684,
+    "channels": [
+      1,
+      0,
+      0,
+      0,
+      0,
+      1.934211,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0
+    ]
+  },
+  "distribution": {
+    "score": {
+      "mean": 93.19736,
+      "stddev": 0.743741,
+      "min": 93,
+      "max": 96
+    },
+    "density": {
+      "mean": 15.73684,
+      "stddev": 0.991655,
+      "min": 12,
+      "max": 16
+    },
+    "channelPressure": {
+      "mean": 19.34211,
+      "stddev": 2.479137,
+      "min": 10,
+      "max": 20
+    },
+    "channelOccupancy": {
+      "mean": 24,
+      "stddev": 0,
+      "min": 24,
+      "max": 24
+    },
+    "apCount": {
+      "mean": 3.934211,
+      "stddev": 0.247914,
+      "min": 3,
+      "max": 4
+    },
+    "bleCount": {
+      "mean": 4.052631,
+      "stddev": 0.741526,
+      "min": 2,
+      "max": 5
+    },
+    "ownRssi": {
+      "mean": -31.98684,
+      "stddev": 0.113951,
+      "min": -32,
+      "max": -31
+    }
+  },
+  "deviationParts": {
+    "score": 1.261186,
+    "density": 0.280263,
+    "pressure": 0.700658,
+    "apCount": 0.186842,
+    "bleCount": -0.094737,
+    "rssi": 0.098684
+  },
+  "locationName": "Standort"
+}

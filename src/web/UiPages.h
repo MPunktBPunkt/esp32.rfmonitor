@@ -144,7 +144,7 @@ tr.own{background:rgba(45,212,168,.08)}
       <div class="gauge-wrap">
         <canvas class="gauge" id="g-score" width="180" height="180"></canvas>
         <div class="gauge-lab">RF-Score <span id="g-sv"></span></div>
-        <div class="dq">Data Quality <b id="g-dq">-</b> · Δ Loc <b id="g-dev">-</b> · Radio <b id="g-duty">-</b>%</div>
+        <div class="dq">Data Quality <b id="g-dq">-</b> · Δ Loc <b id="g-dev">-</b> · Radio 5m <b id="g-duty">-</b>%</div>
       </div>
       <div>
         <div class="kpi-grid" id="kpi-grid"></div>
@@ -163,9 +163,16 @@ tr.own{background:rgba(45,212,168,.08)}
         </div>
       </div>
     </div>
-    <div class="panel">
-      <h3>Aktuelle Befunde</h3>
-      <div id="findings" class="break"></div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>Why this score?</h3>
+        <div class="meta" id="why-sum">—</div>
+        <div class="break" id="why-break" style="margin-top:8px"></div>
+      </div>
+      <div class="panel">
+        <h3>Aktuelle Befunde</h3>
+        <div id="findings" class="break"></div>
+      </div>
     </div>
     <div class="panel">
       <h3>RF Timeline</h3>
@@ -407,6 +414,34 @@ function renderBreak(parts){
     return '<div class="rowb"><span>'+r[0]+'</span><div class="meter"><i style="width:'+pct+'%"></i></div><span>-'+v+'</span></div>';
   }).join('')+'<div class="meta" style="margin-top:8px">* Proxy · aktiv Score v'+(window._sv||2)+'</div>';
 }
+function renderWhy(why,loc){
+  const el=$('why-break'), sum=$('why-sum');
+  if(!el||!sum) return;
+  if(!why){sum.textContent='—'; el.innerHTML=''; return}
+  const str=why.strongestPenalty||'none';
+  const strV=why.strongestPenaltyValue||0;
+  const dq=why.measurementQuality!=null?why.measurementQuality:'-';
+  const dev=why.locationDeviation!=null?why.locationDeviation:'—';
+  sum.textContent='Score '+why.score+' · staerkster Abzug: '+str+(strV?' (−'+strV+')':'')+' · DQ '+dq+' · Loc Δ '+dev;
+  const pens=(why.penalties||[]).slice().sort((a,b)=>(b.value||0)-(a.value||0));
+  const max=Math.max(25,...pens.map(p=>Number(p.value||0)));
+  let html=pens.map(p=>{
+    const v=Number(p.value||0); const pct=Math.min(100,v/max*100);
+    const lab=p.key+(p.proxy?'*':'');
+    return '<div class="rowb"><span>'+lab+'</span><div class="meter"><i style="width:'+pct+'%"></i></div><span>-'+v+'</span></div>';
+  }).join('');
+  const dp=(loc&&loc.deviationParts)||null;
+  if(dp){
+    const parts=[['score',dp.score],['density',dp.density],['pressure',dp.pressure],['rssi',dp.rssi],['AP',dp.apCount],['BLE',dp.bleCount]];
+    html+='<div class="meta" style="margin-top:10px">Location Δ Teile</div>';
+    html+=parts.map(r=>{
+      const v=Number(r[1]||0);
+      const s=(v>0?'+':'')+v.toFixed(1);
+      return '<div class="rowb"><span>'+r[0]+'</span><span></span><span>'+s+'</span></div>';
+    }).join('');
+  }
+  el.innerHTML=html+'<div class="meta" style="margin-top:8px">* Proxy</div>';
+}
 function renderFindings(list){
   const el=$('findings'); if(!el) return;
   const rows=list||[];
@@ -458,8 +493,10 @@ function applyStatus(s){
   const loc=rf.location||{};
   const dev=rf.locationDeviation!=null?rf.locationDeviation:(loc.deviation!=null?loc.deviation:null);
   $('g-dev').textContent=dev!=null?(dev>0?'+'+dev:String(dev)):'—';
-  $('g-duty').textContent=Number(rf.radioDutyPct||0).toFixed(1);
+  const duty5=rf.radioDuty5mPct!=null?rf.radioDuty5mPct:rf.radioDutyPct;
+  $('g-duty').textContent=Number(duty5||0).toFixed(1);
   renderBreak(rf.scoreParts);
+  renderWhy(rf.why||((rf.assessment||{}).why),loc);
   renderFindings(rf.findings||[]);
   $('kpi-grid').innerHTML=
     kpi(rf.rfScore||0,'','Score v'+window._sv)+
@@ -475,7 +512,10 @@ function applyStatus(s){
     $('loc-bar').style.width=(loc.captureProgressPct||0)+'%';
   }else if(loc.valid){
     const b=loc.baseline||{};
-    $('loc-status').textContent='Baseline ok · Score≈'+Number(b.score||0).toFixed(0)+' · APs≈'+Number(b.apCount||0).toFixed(1)+' · n='+loc.sampleCount;
+    const dist=(loc.distribution&&loc.distribution.score)||{};
+    const sd=dist.stddev!=null?(' ±'+Number(dist.stddev).toFixed(1)):'';
+    const stale=loc.stale?' · STALE':'';
+    $('loc-status').textContent='Baseline v'+(loc.profileVersion||1)+' · Score≈'+Number(b.score||0).toFixed(0)+sd+' · APs≈'+Number(b.apCount||0).toFixed(1)+' · n='+loc.sampleCount+stale;
     $('loc-bar').style.width='100%';
   }else{
     $('loc-status').textContent='keine Baseline';
@@ -502,26 +542,35 @@ function applyStatus(s){
     kpi(rf.disconnects||0,'','Drops');
   const obs=(rf.observation&&rf.observation.wifi)||{};
   const bleo=(rf.observation&&rf.observation.ble)||{};
+  const radio=(rf.observation&&rf.observation.radio)||{};
+  const d5=rf.radioDuty5mPct!=null?rf.radioDuty5mPct:(radio.duty5mPct!=null?radio.duty5mPct:rf.radioDutyPct);
+  const d1h=rf.radioDuty1hPct!=null?rf.radioDuty1hPct:(radio.duty1hPct!=null?radio.duty1hPct:0);
+  const dLife=rf.radioDutyPct!=null?rf.radioDutyPct:(radio.dutyLifetimePct!=null?radio.dutyLifetimePct:0);
   $('meas-kpis').innerHTML=
     kpi(obs.scanDurationMs!=null?obs.scanDurationMs:(rf.wifiScanDurationMs||0),'ms','WiFi Scan')+
     kpi(bleo.scanDurationMs!=null?bleo.scanDurationMs:(rf.bleScanDurationMs||0),'ms','BLE Scan')+
     kpi(Number(rf.wifiScanFailRate||obs.failRatePct||0).toFixed(1),'%','WiFi Fail')+
     kpi(Number(rf.bleScanFailRate||bleo.failRatePct||0).toFixed(1),'%','BLE Fail')+
-    kpi(Number(rf.radioDutyPct||0).toFixed(1),'%','Radio Duty')+
-    kpi(hw.historyCapacity||'-','','Hist Cap')+
-    kpi(hw.maxAps||'-','','AP Cap')+
-    kpi(hw.maxBle||'-','','BLE Cap');
+    kpi(Number(d5||0).toFixed(1),'%','Duty 5m')+
+    kpi(Number(d1h||0).toFixed(1),'%','Duty 1h')+
+    kpi(Number(dLife||0).toFixed(1),'%','Duty boot')+
+    kpi(hw.historyCapacity||'-','','Hist Cap');
   const warns=[];
   if((rf.rfScore||100)<40) warns.push('RF-Score niedrig');
   if((rf.measurementQuality||100)<50) warns.push('Messqualitaet niedrig');
   if((rf.channelCongestion||0)>=70) warns.push('Kanaldruck-Proxy hoch');
-  if((rf.radioDutyPct||0)>45) warns.push('Radio-Zeitbudget hoch');
+  if((d5||0)>45) warns.push('Radio-Zeitbudget 5m hoch');
   if(dev!=null && dev<=-25) warns.push('Abweichung vom Standortnormal');
+  if(loc.stale) warns.push('Baseline veraltet');
   if((s.rssi||-30)<-75) warns.push('eigene Verbindung schwach');
   if(loc.capturing) warns.push('Baseline-Aufnahme laeuft');
   $('rf-warn').style.display=warns.length?'block':'none';
   $('rf-warn').textContent=warns.join(' · ');
-  const ts=s.uptimeS||Math.floor(Date.now()/1000);
+  const t=s.time||{};
+  const ts=(t.timeValid&&t.timestampEpochS)?t.timestampEpochS:(s.uptimeS||Math.floor(Date.now()/1000));
+  if($('d-uptime')&&t.timeValid){
+    $('d-uptime').textContent=(s.uptime||'-')+' · NTP ok';
+  }
   hist.rssi.push({v:s.rssi||0,ts}); if(hist.rssi.length>180) hist.rssi.shift();
   hist.rf_score.push({v:Number(rf.rfScore||0),ts}); if(hist.rf_score.length>180) hist.rf_score.shift();
   hist.ap_count.push({v:Number(rf.apCount||0),ts}); if(hist.ap_count.length>180) hist.ap_count.shift();

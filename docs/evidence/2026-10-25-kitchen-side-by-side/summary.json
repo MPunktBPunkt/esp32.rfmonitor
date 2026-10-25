@@ -1,0 +1,84 @@
+{
+  "when": "2026-10-25",
+  "label": "K\u00fcche",
+  "placement": "side-by-side, few cm from Fritzbox",
+  "fw": "1.6.0",
+  "devices": {
+    "mini": {
+      "ip": "192.168.178.87",
+      "board": "esp32-mini",
+      "version": "1.6.0",
+      "rssi": -49,
+      "score": 93,
+      "apCount": 4,
+      "bleCount": 0,
+      "duty5m": 0,
+      "dq": 80,
+      "baseline": {
+        "score": 93,
+        "density": 16,
+        "channelPressure": 20,
+        "channelOccupancy": 24,
+        "apCount": 4,
+        "bleCount": 0,
+        "ownRssi": -49.01316,
+        "channels": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ]
+      },
+      "sessionSamples": 6,
+      "sessionAvg": 93
+    },
+    "s3": {
+      "ip": "192.168.178.88",
+      "board": "esp32-s3",
+      "version": "1.6.0",
+      "rssi": -32,
+      "score": 96,
+      "apCount": 3,
+      "bleCount": 5,
+      "duty5m": 29.30139,
+      "dq": 100,
+      "baseline": {
+        "score": 93.19736,
+        "density": 15.73684,
+        "channelPressure": 19.34211,
+        "channelOccupancy": 24,
+        "apCount": 3.934211,
+        "bleCount": 4.052631,
+        "ownRssi": -31.98684,
+        "channels": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1.934211,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ]
+      },
+      "sessionSamples": 4,
+      "sessionAvg": 96
+    }
+  }
+}

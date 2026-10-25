@@ -1,6 +1,7 @@
 #include "RfAnalyzer.h"
 #include "core/HistoryStore.h"
 #include "core/HwCaps.h"
+#include "core/TimeBase.h"
 #include "BuildFlags.h"
 #include <math.h>
 #include <ArduinoJson.h>
@@ -84,10 +85,58 @@ void RfAnalyzer::recomputeQuality() {
     }
 
     if (rssiCount_ < 6) q -= 15;
-    if (radioDutyPct_ > 40.0f) q -= 10;
+    // Prefer recent duty window so boot-spike lifetime doesn't permanently tank quality.
+    float dutyRecent = radioDuty5mPct_ > 0.0f ? radioDuty5mPct_ : radioDutyPct_;
+    if (dutyRecent > 40.0f) q -= 10;
     if (q < 0) q = 0;
     if (q > 100) q = 100;
     quality_ = (uint8_t)q;
+}
+
+void RfAnalyzer::updateRadioDuty() {
+    uint32_t busy = 0;
+    if (scanner_) busy += scanner_->totalBusyMs();
+    if (ble_) busy += ble_->totalBusyMs();
+
+    uint32_t upMs = millis();
+    if (upMs < 1000UL) upMs = 1000UL;
+    radioDutyPct_ = 100.0f * (float)busy / (float)upMs;
+    if (radioDutyPct_ > 100.0f) radioDutyPct_ = 100.0f;
+
+    uint32_t delta = 0;
+    if (busy >= lastBusyMs_) delta = busy - lastBusyMs_;
+    lastBusyMs_ = busy;
+    busyThisMin_ += delta;
+
+    if (minuteMarkMs_ == 0) minuteMarkMs_ = millis();
+    if (millis() - minuteMarkMs_ >= 60000UL) {
+        busyPerMin_[busyMinHead_] = busyThisMin_;
+        busyMinHead_ = (uint8_t)((busyMinHead_ + 1) % 60);
+        if (busyMinFilled_ < 60) busyMinFilled_++;
+        busyThisMin_ = 0;
+        minuteMarkMs_ = millis();
+    }
+
+    auto windowPct = [&](uint8_t minutes) -> float {
+        if (minutes == 0) return 0;
+        uint8_t n = busyMinFilled_ < minutes ? busyMinFilled_ : minutes;
+        if (n == 0) {
+            // Warm-up: use in-progress minute + lifetime as fallback.
+            return radioDutyPct_;
+        }
+        uint32_t sum = busyThisMin_;
+        for (uint8_t i = 0; i < n; i++) {
+            uint8_t idx = (uint8_t)((busyMinHead_ + 60 - 1 - i) % 60);
+            sum += busyPerMin_[idx];
+        }
+        uint32_t windowMs = (uint32_t)(n + 1) * 60000UL;
+        if (windowMs < 1000UL) windowMs = 1000UL;
+        float pct = 100.0f * (float)sum / (float)windowMs;
+        if (pct > 100.0f) pct = 100.0f;
+        return pct;
+    };
+    radioDuty5mPct_ = windowPct(5);
+    radioDuty1hPct_ = windowPct(60);
 }
 
 bool RfAnalyzer::tickHyst(Hyst& h, bool enterCond, bool exitCond,
@@ -152,8 +201,10 @@ void RfAnalyzer::updateAlerts() {
              "measurement.data_quality_low", "Messqualitaet niedrig",
              "measurement.data_quality_recover", "Messqualitaet ok", detail);
 
-    snprintf(detail, sizeof(detail), "%.0f", radioDutyPct_);
-    tickHyst(hystDuty_, radioDutyPct_ > 45.0f, radioDutyPct_ < 35.0f,
+    // Alerts use 5m window (not lifetime), so boot scan bursts don't stick.
+    float dutyAlert = radioDuty5mPct_ > 0.0f ? radioDuty5mPct_ : radioDutyPct_;
+    snprintf(detail, sizeof(detail), "%.0f", dutyAlert);
+    tickHyst(hystDuty_, dutyAlert > 45.0f, dutyAlert < 35.0f,
              45000UL, 90000UL, 180000UL,
              "measurement.radio_budget_high", "Radio-Zeitbudget hoch",
              "measurement.radio_budget_ok", "Radio-Zeitbudget ok", detail);
@@ -204,14 +255,7 @@ void RfAnalyzer::recompute() {
     channelLoad_ = occupied >= 13 ? 100 : (uint8_t)(occupied * 8);
     density_ = aps >= 20 ? 80 : (uint8_t)(aps * 4);
 
-    uint32_t upMs = millis();
-    if (upMs < 1000UL) upMs = 1000UL;
-    uint32_t busy = 0;
-    if (scanner_) busy += scanner_->totalBusyMs();
-    if (ble_) busy += ble_->totalBusyMs();
-    radioDutyPct_ = 100.0f * (float)busy / (float)upMs;
-    if (radioDutyPct_ > 100.0f) radioDutyPct_ = 100.0f;
-
+    updateRadioDuty();
     recomputeQuality();
 
     RfScoreFeatures feat;
@@ -261,7 +305,9 @@ void RfAnalyzer::recompute() {
     }
 
     session_.noteSample(score_, quality_, location_.deviation(), aps, bleN, congestion_,
-                        (float)rssi, radioDutyPct_, 2);
+                        channelLoad_, density_, rssiJitter_, stability_,
+                        WiFi.status() == WL_CONNECTED,
+                        (float)rssi, radioDuty5mPct_ > 0 ? radioDuty5mPct_ : radioDutyPct_, 2);
 
     int drop = cfg_ ? cfg_->rssiWarnDrop : 12;
     if (lastRssi_ != 0 && rssi <= lastRssi_ - drop && events_) {
@@ -308,9 +354,46 @@ void RfAnalyzer::appendHubContract(JsonObject target) const {
     target["apCount"] = scanner_ ? scanner_->apCount() : 0;
     target["bleCount"] = ble_ ? ble_->deviceCount() : 0;
     target["radioDutyPct"] = radioDutyPct_;
+    target["radioDuty5mPct"] = radioDuty5mPct_;
+    target["radioDuty1hPct"] = radioDuty1hPct_;
     target["wifiRssi"] = WiFi.RSSI();
     target["locationValid"] = location_.valid();
     appendAlertState(target["alert"].to<JsonObject>());
+}
+
+void RfAnalyzer::appendWhyJson(JsonObject target) const {
+    const RfScoreBreakdown& parts = RFMON_SCORE_VERSION >= 2 ? partsV2_ : partsV1_;
+    target["score"] = score_;
+    target["scoreVersion"] = RFMON_SCORE_VERSION;
+    target["measurementQuality"] = quality_;
+    target["locationDeviation"] = location_.deviation();
+
+    struct Row { const char* key; uint8_t value; bool proxy; };
+    Row rows[] = {
+        {"ownLink", parts.ownLink, false},
+        {"jitter", parts.jitter, false},
+        {"density", parts.density, true},
+        {"pressure", parts.pressure, true},
+        {"occupancy", parts.occupancy, true},
+        {"stability", parts.stability, false},
+        {"disconnect", parts.disconnect, false},
+        {"qualityGate", parts.qualityGate, false},
+    };
+    const char* strongest = "none";
+    uint8_t strongestV = 0;
+    JsonArray arr = target["penalties"].to<JsonArray>();
+    for (auto& r : rows) {
+        JsonObject o = arr.add<JsonObject>();
+        o["key"] = r.key;
+        o["value"] = r.value;
+        o["proxy"] = r.proxy;
+        if (r.value > strongestV) {
+            strongestV = r.value;
+            strongest = r.key;
+        }
+    }
+    target["strongestPenalty"] = strongest;
+    target["strongestPenaltyValue"] = strongestV;
 }
 
 void RfAnalyzer::appendFindingsJson(JsonArray arr) const {
@@ -333,6 +416,7 @@ void RfAnalyzer::appendFindingsJson(JsonArray arr) const {
     else add("ok", "meas.quality_ok", "Messqualitaet ok");
 
     if (location_.valid()) {
+        if (location_.stale()) add("info", "loc.stale", "Standort-Baseline aelter als 90 Tage");
         if (location_.deviation() <= -25) add("warn", "loc.dev_high", "Lage weicht vom Standortnormal ab");
         else add("ok", "loc.dev_ok", "Lage nahe Standortnormal");
     } else if (location_.capturing()) {
@@ -389,7 +473,10 @@ void RfAnalyzer::appendObservationJson(JsonObject target) const {
     JsonObject radio = obs["radio"].to<JsonObject>();
     radio["wifiBusyMs"] = scanner_ ? scanner_->totalBusyMs() : 0;
     radio["bleBusyMs"] = ble_ ? ble_->totalBusyMs() : 0;
-    radio["dutyCyclePct"] = radioDutyPct_;
+    radio["dutyCyclePct"] = radioDutyPct_;           // lifetime (compat)
+    radio["dutyLifetimePct"] = radioDutyPct_;
+    radio["duty5mPct"] = radioDuty5mPct_;
+    radio["duty1hPct"] = radioDuty1hPct_;
     radio["wifiScanning"] = scanner_ ? scanner_->busy() : false;
     radio["bleScanning"] = ble_ ? ble_->busy() : false;
     JsonObject link = obs["link"].to<JsonObject>();
@@ -417,6 +504,7 @@ void RfAnalyzer::appendObservationJson(JsonObject target) const {
     putParts(assess["scoreParts"].to<JsonObject>(), RFMON_SCORE_VERSION >= 2 ? partsV2_ : partsV1_);
     putParts(assess["scorePartsV1"].to<JsonObject>(), partsV1_);
     putParts(assess["scorePartsV2"].to<JsonObject>(), partsV2_);
+    appendWhyJson(assess["why"].to<JsonObject>());
 
     location_.appendJson(target["location"].to<JsonObject>());
     session_.appendStatusJson(target["session"].to<JsonObject>());
@@ -430,7 +518,8 @@ void RfAnalyzer::appendSnapshotJson(JsonObject target) const {
     target["scoreVersion"] = RFMON_SCORE_VERSION;
     target["board"] = RFMON_BOARD_ID;
     target["location"] = cfg_ ? cfg_->locationName : "";
-    target["timestampS"] = millis() / 1000UL;
+    target["timestampS"] = TimeBase::uptimeS();  // legacy = uptime
+    TimeBase::appendJson(target["time"].to<JsonObject>());
     target["rfScore"] = score_;
     target["scoreV1"] = scoreV1_;
     target["scoreV2"] = scoreV2_;
@@ -440,6 +529,9 @@ void RfAnalyzer::appendSnapshotJson(JsonObject target) const {
     target["channelOccupancy"] = channelLoad_;
     target["density"] = density_;
     target["radioDutyPct"] = radioDutyPct_;
+    target["radioDuty5mPct"] = radioDuty5mPct_;
+    target["radioDuty1hPct"] = radioDuty1hPct_;
+    appendWhyJson(target["why"].to<JsonObject>());
     JsonObject wifi = target["wifi"].to<JsonObject>();
     wifi["apCount"] = scanner_ ? scanner_->apCount() : 0;
     wifi["knownApCount"] = scanner_ ? scanner_->knownCount() : 0;
@@ -474,7 +566,10 @@ void RfAnalyzer::appendStatusJson(JsonObject target) const {
     target["stability"] = stability_;
     target["disconnects"] = disconnects_;
     target["radioDutyPct"] = radioDutyPct_;
+    target["radioDuty5mPct"] = radioDuty5mPct_;
+    target["radioDuty1hPct"] = radioDuty1hPct_;
     putParts(target["scoreParts"].to<JsonObject>(), RFMON_SCORE_VERSION >= 2 ? partsV2_ : partsV1_);
+    appendWhyJson(target["why"].to<JsonObject>());
     if (scanner_) {
         target["apCount"] = scanner_->apCount();
         target["knownApCount"] = scanner_->knownCount();
@@ -517,6 +612,8 @@ void RfAnalyzer::appendIoValues(JsonObject ios) const {
     add("channel_pressure_proxy", (float)congestion_, "");
     add("scan_fail_count", scanner_ ? (float)scanner_->failCount() : 0, "");
     add("radio_duty_pct", radioDutyPct_, "%");
+    add("radio_duty_5m_pct", radioDuty5mPct_, "%");
+    add("radio_duty_1h_pct", radioDuty1hPct_, "%");
     add("alert_any", anyAlert() ? 1.0f : 0.0f, "");
     add("alert_score_low", hystScore_.active ? 1.0f : 0.0f, "");
     add("alert_pressure_high", hystPressure_.active ? 1.0f : 0.0f, "");

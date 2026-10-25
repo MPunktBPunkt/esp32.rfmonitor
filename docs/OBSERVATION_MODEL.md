@@ -37,6 +37,9 @@ ASSESSMENT            → Score + Data Quality (kein Physik-Claim)
       "wifiBusyMs": 1842,
       "bleBusyMs": 4000,
       "dutyCyclePct": 14.2,
+      "dutyLifetimePct": 14.2,
+      "duty5mPct": 8.1,
+      "duty1hPct": 11.0,
       "wifiScanning": false,
       "bleScanning": false
     },
@@ -55,10 +58,15 @@ ASSESSMENT            → Score + Data Quality (kein Physik-Claim)
   },
   "assessment": {
     "score": 71,
-    "scoreVersion": 1,
-    "scoreParts": { "rssi": 7, "jitter": 0, "congestion": 12, "density": 11, "stability": 0, "disconnect": 0 },
-    "measurementQuality": 94
-  }
+    "scoreVersion": 2,
+    "scoreV1": 68,
+    "scoreV2": 71,
+    "scoreParts": { "ownLink": 7, "jitter": 0, "pressure": 10, "density": 8, "occupancy": 2, "stability": 0, "disconnect": 0, "qualityGate": 0 },
+    "measurementQuality": 94,
+    "locationDeviation": -3,
+    "why": { "strongestPenalty": "pressure", "strongestPenaltyValue": 10 }
+  },
+  "time": { "uptimeS": 84231, "timeValid": true, "timestampEpochS": 1761402702 }
 }
 ```
 
@@ -75,7 +83,7 @@ Abzüge (v1.2):
 | WLAN Fail-Rate (Anteil) | ×0.4 |
 | BLE aktiv und Fail-Rate | ×0.3 |
 | RSSI-Fenster &lt; 6 Proben | −15 |
-| Radio-Duty &gt; 40 % | −10 |
+| Radio-Duty 5 m &gt; 40 % (Fallback: Lifetime) | −10 |
 
 ## Kompatibilität
 

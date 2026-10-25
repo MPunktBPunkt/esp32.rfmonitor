@@ -32,7 +32,9 @@ public:
     uint8_t density() const { return density_; }
     uint8_t stability() const { return stability_; }
     uint16_t disconnects() const { return disconnects_; }
-    float radioDutyPct() const { return radioDutyPct_; }
+    float radioDutyPct() const { return radioDutyPct_; }           // lifetime (compat)
+    float radioDuty5mPct() const { return radioDuty5mPct_; }
+    float radioDuty1hPct() const { return radioDuty1hPct_; }
     LocationProfile& location() { return location_; }
     const LocationProfile& location() const { return location_; }
     MeasSession& session() { return session_; }
@@ -45,6 +47,7 @@ public:
     void appendAlertState(JsonObject target) const;
     void appendHubContract(JsonObject target) const;
     void appendIoValues(JsonObject ios) const;
+    void appendWhyJson(JsonObject target) const;
     bool anyAlert() const;
 
 private:
@@ -57,6 +60,7 @@ private:
     void recompute();
     void recomputeQuality();
     void updateAlerts();
+    void updateRadioDuty();
     bool tickHyst(Hyst& h, bool enterCond, bool exitCond, unsigned long enterMs, unsigned long exitMs,
                   unsigned long cooldownMs, const char* enterType, const char* enterTitle,
                   const char* exitType, const char* exitTitle, const char* detail);
@@ -76,7 +80,15 @@ private:
     uint8_t quality_ = 0;
     float rssiAvg_ = 0;
     float rssiJitter_ = 0;
-    float radioDutyPct_ = 0;
+    float radioDutyPct_ = 0;      // lifetime since boot
+    float radioDuty5mPct_ = 0;
+    float radioDuty1hPct_ = 0;
+    uint32_t lastBusyMs_ = 0;
+    uint32_t busyThisMin_ = 0;
+    unsigned long minuteMarkMs_ = 0;
+    uint32_t busyPerMin_[60] = {0};
+    uint8_t busyMinHead_ = 0;
+    uint8_t busyMinFilled_ = 0;
     int8_t rssiMin_ = 0;
     int8_t rssiMax_ = 0;
     uint8_t congestion_ = 0;

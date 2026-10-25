@@ -6,6 +6,22 @@ on:
   pull_request:
 
 jobs:
+  score-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+      - name: Python score unit tests
+        run: python3 tools/test_rf_score.py
+      - name: Native RfScore tests
+        run: pio test -e native
+      - name: Score replay smoke
+        run: python3 tools/rf-score-replay docs/evidence/2026-10-25-lab-baseline/mini-session.json --limit 5
+
   firmware:
     runs-on: ubuntu-latest
     strategy:
