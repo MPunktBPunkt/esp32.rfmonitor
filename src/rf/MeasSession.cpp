@@ -10,6 +10,9 @@ void MeasSession::begin() {
     head_ = 0;
     phaseCount_ = 0;
     currentPhaseId_[0] = 0;
+    motionHead_ = 0;
+    motionCount_ = 0;
+    motionTotal_ = 0;
 }
 
 void MeasSession::closeOpenPhase(uint32_t sampleIdx, uint32_t uptimeS) {
@@ -52,23 +55,36 @@ void MeasSession::appendPhaseJson(JsonObject o, const Phase& p) const {
     o["endUptimeS"] = p.open ? TimeBase::uptimeS() : p.endUptimeS;
     o["open"] = p.open;
     o["n"] = p.n;
-    if (p.n == 0) return;
-    float n = (float)p.n;
-    o["avgScore"] = p.sumScore / n;
-    o["avgQuality"] = p.sumQuality / n;
-    o["avgDeviation"] = p.sumDev / n;
-    o["avgApCount"] = p.sumAp / n;
-    o["avgBleCount"] = p.sumBle / n;
-    o["avgPressure"] = p.sumPress / n;
-    o["avgOccupancy"] = p.sumOcc / n;
-    o["avgDensity"] = p.sumDens / n;
-    o["avgJitter"] = p.sumJitter / n;
-    o["avgStability"] = p.sumStab / n;
-    o["avgOwnRssi"] = p.sumRssi / n;
-    o["avgRadioDuty"] = p.sumDuty / n;
-    o["connectedPct"] = (p.connectedN * 100.0f) / n;
-    o["minScore"] = p.minScore;
-    o["maxScore"] = p.maxScore;
+    if (p.n > 0) {
+        float n = (float)p.n;
+        o["avgScore"] = p.sumScore / n;
+        o["avgQuality"] = p.sumQuality / n;
+        o["avgDeviation"] = p.sumDev / n;
+        o["avgApCount"] = p.sumAp / n;
+        o["avgBleCount"] = p.sumBle / n;
+        o["avgPressure"] = p.sumPress / n;
+        o["avgOccupancy"] = p.sumOcc / n;
+        o["avgDensity"] = p.sumDens / n;
+        o["avgJitter"] = p.sumJitter / n;
+        o["avgStability"] = p.sumStab / n;
+        o["avgOwnRssi"] = p.sumRssi / n;
+        o["avgRadioDuty"] = p.sumDuty / n;
+        o["connectedPct"] = (p.connectedN * 100.0f) / n;
+        o["minScore"] = p.minScore;
+        o["maxScore"] = p.maxScore;
+    }
+    o["motionN"] = p.motionN;
+    if (p.motionN > 0) {
+        double n = (double)p.motionN;
+        double mean = p.motionSum / n;
+        double var = (p.motionSumSq / n) - (mean * mean);
+        if (var < 0) var = 0;
+        o["motionMeanRssi"] = mean;
+        o["motionStdRssi"] = sqrt(var);
+        o["motionMinRssi"] = p.motionMin;
+        o["motionMaxRssi"] = p.motionMax;
+        o["motionRangeDb"] = (int)p.motionMax - (int)p.motionMin;
+    }
 }
 
 bool MeasSession::start(const char* label, const SessionProfileDef* profile, uint16_t durationOverrideS) {
@@ -91,6 +107,9 @@ bool MeasSession::start(const char* label, const SessionProfileDef* profile, uin
     ringCount_ = 0;
     phaseCount_ = 0;
     currentPhaseId_[0] = 0;
+    motionHead_ = 0;
+    motionCount_ = 0;
+    motionTotal_ = 0;
 
     memset(label_, 0, sizeof(label_));
     memset(profileId_, 0, sizeof(profileId_));
@@ -104,6 +123,8 @@ bool MeasSession::start(const char* label, const SessionProfileDef* profile, uin
     bleIntervalS_ = p.bleScanIntervalS;
     bleEnabled_ = p.bleEnabled;
     characterization_ = p.characterization;
+    motionSensitivity_ = p.motionSensitivity;
+    motionRssiIntervalMs_ = p.motionRssiIntervalMs;
 
     if (label && label[0]) {
         strncpy(label_, label, sizeof(label_) - 1);
@@ -138,6 +159,8 @@ bool MeasSession::markPhase(const char* id, const char* note) {
     p.open = true;
     p.minScore = 100;
     p.maxScore = 0;
+    p.motionMin = 127;
+    p.motionMax = -128;
     strncpy(currentPhaseId_, p.id, sizeof(currentPhaseId_) - 1);
     return true;
 }
@@ -199,6 +222,27 @@ void MeasSession::noteSample(uint8_t score, uint8_t quality, int8_t deviation,
     if (ringCount_ < kMaxSamples) ringCount_++;
 }
 
+void MeasSession::noteMotionRssi(int8_t rssi, bool connected) {
+    if (!active_ || !motionSensitivity_) return;
+    MotionSample& m = motionRing_[motionHead_];
+    m.uptimeMs = millis();
+    m.rssi = rssi;
+    m.flags = connected ? 0x01 : 0x00;
+    m.phaseIdx = (phaseCount_ > 0 && phases_[phaseCount_ - 1].open) ? (uint8_t)(phaseCount_ - 1) : 255;
+    motionHead_ = (motionHead_ + 1) % kMaxMotionRssi;
+    if (motionCount_ < kMaxMotionRssi) motionCount_++;
+    motionTotal_++;
+
+    if (m.phaseIdx != 255) {
+        Phase& p = phases_[m.phaseIdx];
+        p.motionN++;
+        p.motionSum += rssi;
+        p.motionSumSq += (double)rssi * (double)rssi;
+        if (rssi < p.motionMin) p.motionMin = rssi;
+        if (rssi > p.motionMax) p.motionMax = rssi;
+    }
+}
+
 void MeasSession::appendStatusJson(JsonObject target) const {
     target["active"] = active_;
     target["label"] = label_;
@@ -209,6 +253,11 @@ void MeasSession::appendStatusJson(JsonObject target) const {
     target["bleScanIntervalS"] = bleIntervalS_;
     target["bleEnabled"] = bleEnabled_;
     target["characterization"] = characterization_;
+    target["motionSensitivity"] = motionSensitivity_;
+    target["motionRssiIntervalMs"] = motionRssiIntervalMs_;
+    target["motionRssiCount"] = (uint32_t)motionCount_;
+    target["motionRssiCapacity"] = (uint32_t)kMaxMotionRssi;
+    target["motionRssiTotal"] = motionTotal_;
     target["phase"] = currentPhaseId_;
     target["startS"] = startS_;
     target["endS"] = endS_;
@@ -250,6 +299,8 @@ void MeasSession::appendExportJson(JsonObject target) const {
     prof["bleScanIntervalS"] = bleIntervalS_;
     prof["bleEnabled"] = bleEnabled_;
     prof["characterization"] = characterization_;
+    prof["motionSensitivity"] = motionSensitivity_;
+    prof["motionRssiIntervalMs"] = motionRssiIntervalMs_;
 
     JsonArray ph = target["phases"].to<JsonArray>();
     for (uint8_t i = 0; i < phaseCount_; i++) {
@@ -278,5 +329,22 @@ void MeasSession::appendExportJson(JsonObject target) const {
         o["ownRssi"] = s.ownRssi;
         o["radioDuty"] = s.radioDuty;
         if (s.phase[0]) o["phase"] = s.phase;
+    }
+
+    if (motionCount_ == 0) return;
+    JsonObject motion = target["motionRssi"].to<JsonObject>();
+    motion["intervalMs"] = motionRssiIntervalMs_;
+    motion["capacity"] = (uint32_t)kMaxMotionRssi;
+    motion["count"] = (uint32_t)motionCount_;
+    motion["total"] = motionTotal_;
+    JsonArray ms = motion["samples"].to<JsonArray>();
+    for (size_t i = 0; i < motionCount_; i++) {
+        size_t idx = (motionHead_ + kMaxMotionRssi - motionCount_ + i) % kMaxMotionRssi;
+        const MotionSample& m = motionRing_[idx];
+        JsonArray row = ms.add<JsonArray>();
+        row.add(m.uptimeMs);
+        row.add(m.rssi);
+        row.add(m.phaseIdx == 255 ? -1 : (int)m.phaseIdx);
+        row.add((m.flags & 0x01) != 0 ? 1 : 0);
     }
 }

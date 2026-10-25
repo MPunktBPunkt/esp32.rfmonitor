@@ -221,9 +221,10 @@ tr.own{background:rgba(45,212,168,.08)}
         <div class="meta" id="sess-status">inaktiv</div>
         <div class="row" style="margin-top:10px">
           <div><label>Profil</label>
-            <select id="sess-profile">
+            <select id="sess-profile" onchange="sessProfileChanged()">
               <option value="field">Field Session (10 min)</option>
               <option value="characterization">Score Characterization</option>
+              <option value="motion">Motion Sensitivity (200 ms RSSI)</option>
               <option value="quick">Quick Check (3 min)</option>
               <option value="diagnose">Diagnose</option>
             </select>
@@ -232,13 +233,22 @@ tr.own{background:rgba(45,212,168,.08)}
         </div>
         <div class="row" id="sess-phases" style="margin-top:8px;display:none;flex-wrap:wrap;gap:6px">
           <span class="meta">Phase:</span>
-          <button class="btn" onclick="sessPhase('A','RSSI -20dB')">A</button>
-          <button class="btn" onclick="sessPhase('B','+5 APs')">B</button>
-          <button class="btn" onclick="sessPhase('C','same channel')">C</button>
-          <button class="btn" onclick="sessPhase('D','more channels')">D</button>
-          <button class="btn" onclick="sessPhase('E','disconnect')">E</button>
-          <button class="btn" onclick="sessPhase('F','stabilize')">F</button>
-          <button class="btn" onclick="sessPhase('G','baseline')">G</button>
+          <span id="sess-phases-score">
+            <button class="btn" onclick="sessPhase('A','RSSI -20dB')">A</button>
+            <button class="btn" onclick="sessPhase('B','+5 APs')">B</button>
+            <button class="btn" onclick="sessPhase('C','same channel')">C</button>
+            <button class="btn" onclick="sessPhase('D','more channels')">D</button>
+            <button class="btn" onclick="sessPhase('E','disconnect')">E</button>
+            <button class="btn" onclick="sessPhase('F','stabilize')">F</button>
+            <button class="btn" onclick="sessPhase('G','baseline')">G</button>
+          </span>
+          <span id="sess-phases-motion" style="display:none">
+            <button class="btn" onclick="sessPhase('R0','stationary baseline')">R0</button>
+            <button class="btn" onclick="sessPhase('R1','walk-by #1')">R1</button>
+            <button class="btn" onclick="sessPhase('R2','stationary')">R2</button>
+            <button class="btn" onclick="sessPhase('R3','walk-by #2')">R3</button>
+            <button class="btn" onclick="sessPhase('R4','stationary')">R4</button>
+          </span>
         </div>
         <button class="btn btn-a" onclick="sessStart()">Start</button>
         <button class="btn" onclick="sessStop()">Stop</button>
@@ -583,12 +593,22 @@ function applyStatus(s){
   const sess=rf.session||{};
   const phBox=$('sess-phases');
   if(phBox) phBox.style.display=(sess.active&&sess.characterization)?'flex':'none';
+  const mot=!!sess.motionSensitivity;
+  if($('sess-phases-score')) $('sess-phases-score').style.display=mot?'none':'inline';
+  if($('sess-phases-motion')) $('sess-phases-motion').style.display=mot?'inline':'none';
+  if(sess.active&&mot){
+    const mr=sess.motionRssiCount!=null?(' · motionRSSI '+sess.motionRssiCount+'/'+(sess.motionRssiCapacity||'?')):'';
+    /* appended below with phase */
+    window._motionHint=mr;
+  } else window._motionHint='';
   if(sess.active){
     const rem=sess.remainingS!=null?(' · rest '+sess.remainingS+'s'):'';
     const ph=sess.phase?(' · phase '+sess.phase):'';
-    $('sess-status').textContent='aktiv · '+(sess.profile||'?')+' · '+sess.sampleCount+' Samples · avgScore '+Number(sess.avgScore||0).toFixed(0)+ph+rem;
+    const mh=window._motionHint||'';
+    $('sess-status').textContent='aktiv · '+(sess.profile||'?')+' · '+sess.sampleCount+' Samples · avgScore '+Number(sess.avgScore||0).toFixed(0)+ph+rem+mh;
   }else if(sess.sampleCount){
-    $('sess-status').textContent='gestoppt · '+(sess.profile||'')+' · '+sess.sampleCount+' Samples · min/max '+sess.minScore+'/'+sess.maxScore;
+    const mh=sess.motionRssiCount?(' · motionRSSI '+sess.motionRssiCount):'';
+    $('sess-status').textContent='gestoppt · '+(sess.profile||'')+' · '+sess.sampleCount+' Samples · min/max '+sess.minScore+'/'+sess.maxScore+mh;
   }else{
     $('sess-status').textContent='inaktiv';
   }
@@ -810,6 +830,12 @@ function locCapture(){jpost('/api/location/capture',{durationS:Number($('loc-dur
 function locStop(){jpost('/api/location/capture/stop',{}).then(d=>{$('loc-status').textContent=d.valid?'Baseline gespeichert':'zu wenig Samples'})}
 function locCancel(){jpost('/api/location/capture/cancel',{}).then(()=>{$('loc-status').textContent='abgebrochen';$('loc-bar').style.width='0%'})}
 function locClear(){if(confirm('Baseline loeschen?'))jpost('/api/location/clear',{}).then(()=>{$('loc-status').textContent='keine Baseline';$('loc-bar').style.width='0%'})}
+function sessProfileChanged(){
+  const p=($('sess-profile')&&$('sess-profile').value)||'';
+  const mot=p==='motion';
+  if($('sess-phases-score')) $('sess-phases-score').style.display=mot?'none':'inline';
+  if($('sess-phases-motion')) $('sess-phases-motion').style.display=mot?'inline':'none';
+}
 function sessStart(){
   jpost('/api/session/start',{
     label:$('sess-label').value||'',
@@ -818,6 +844,7 @@ function sessStart(){
     const s=d.session||{};
     $('sess-status').textContent=d.ok?('aktiv · '+(s.profile||'')):(d.error||'Fehler');
     if($('sess-phases')) $('sess-phases').style.display=(d.ok&&s.characterization)?'flex':'none';
+    sessProfileChanged();
   })
 }
 function sessPhase(id,note){jpost('/api/session/phase',{id:id,note:note||''}).then(d=>{$('sess-status').textContent=d.ok?('phase '+id):'Phase-Fehler'})}

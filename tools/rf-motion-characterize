@@ -1,0 +1,220 @@
+#!/usr/bin/env python3
+"""Analyze motion-sensitivity session exports (high-rate own-link RSSI).
+
+Expects phases R0/R2/R4 = stationary, R1/R3 = walk-by.
+Does NOT claim person detection — reports FACT metrics only.
+
+Usage:
+  tools/rf-motion-characterize docs/evidence/.../mini-session.json
+  tools/rf-motion-characterize a.json b.json   # Mini + S3 side-by-side
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import sys
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+
+def _percentile(sorted_vals: List[float], p: float) -> float:
+    if not sorted_vals:
+        return float("nan")
+    if len(sorted_vals) == 1:
+        return sorted_vals[0]
+    k = (len(sorted_vals) - 1) * (p / 100.0)
+    f = math.floor(k)
+    c = math.ceil(k)
+    if f == c:
+        return sorted_vals[int(k)]
+    return sorted_vals[f] * (c - k) + sorted_vals[c] * (k - f)
+
+
+def _stats(vals: List[float]) -> Dict[str, float]:
+    if not vals:
+        return {}
+    s = sorted(vals)
+    n = float(len(vals))
+    mean = sum(vals) / n
+    var = sum((v - mean) ** 2 for v in vals) / n
+    return {
+        "n": len(vals),
+        "mean": mean,
+        "std": math.sqrt(var),
+        "min": s[0],
+        "max": s[-1],
+        "range": s[-1] - s[0],
+        "p05": _percentile(s, 5),
+        "p50": _percentile(s, 50),
+        "p95": _percentile(s, 95),
+    }
+
+
+def _load_motion(path: Path) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    phases = data.get("phases") or []
+    motion = data.get("motionRssi") or {}
+    raw = motion.get("samples") or []
+    rows: List[Dict[str, Any]] = []
+    for row in raw:
+        if not isinstance(row, (list, tuple)) or len(row) < 2:
+            continue
+        t_ms = int(row[0])
+        rssi = float(row[1])
+        pidx = int(row[2]) if len(row) > 2 else -1
+        conn = bool(row[3]) if len(row) > 3 else True
+        pid = ""
+        if 0 <= pidx < len(phases):
+            pid = str(phases[pidx].get("id") or "")
+        rows.append({"t_ms": t_ms, "rssi": rssi, "phase": pid, "connected": conn})
+    return data, rows
+
+
+def _by_phase(rows: List[Dict[str, Any]]) -> Dict[str, List[float]]:
+    out: Dict[str, List[float]] = {}
+    for r in rows:
+        pid = r.get("phase") or ""
+        if not pid:
+            continue
+        out.setdefault(pid, []).append(float(r["rssi"]))
+    return out
+
+
+def _excursion(walk: List[float], baseline_mean: float) -> Dict[str, float]:
+    if not walk:
+        return {}
+    # signed dips below baseline (body shadowing usually weakens RSSI → more negative)
+    deltas = [v - baseline_mean for v in walk]
+    abs_deltas = [abs(d) for d in deltas]
+    return {
+        "max_abs_excursion_db": max(abs_deltas),
+        "max_drop_db": min(deltas),  # most negative relative to baseline
+        "max_rise_db": max(deltas),
+        "median_abs_db": _percentile(sorted(abs_deltas), 50),
+    }
+
+
+def analyze(path: Path, verbose: bool = True) -> Dict[str, Any]:
+    data, rows = _load_motion(path)
+    by = _by_phase(rows)
+    rest_ids = [p for p in ("R0", "R2", "R4") if p in by]
+    walk_ids = [p for p in ("R1", "R3") if p in by]
+
+    rest_vals: List[float] = []
+    for p in rest_ids:
+        rest_vals.extend(by[p])
+    rest = _stats(rest_vals)
+    base_mean = rest.get("mean", 0.0)
+    base_std = rest.get("std", 0.0) or 1e-6
+
+    walks: Dict[str, Any] = {}
+    for wid in walk_ids:
+        # baseline for R1 = R0; for R3 = R2 if present else rest
+        if wid == "R1" and "R0" in by:
+            bmean = _stats(by["R0"]).get("mean", base_mean)
+            bstd = _stats(by["R0"]).get("std", base_std) or 1e-6
+        elif wid == "R3" and "R2" in by:
+            bmean = _stats(by["R2"]).get("mean", base_mean)
+            bstd = _stats(by["R2"]).get("std", base_std) or 1e-6
+        else:
+            bmean, bstd = base_mean, base_std
+        # Floor σ so a perfectly flat rest segment doesn't explode SNR.
+        bstd = max(bstd, base_std, 0.15)
+        ex = _excursion(by[wid], bmean)
+        snr = (ex.get("max_abs_excursion_db") or 0) / bstd if ex else 0
+        walks[wid] = {
+            "stats": _stats(by[wid]),
+            "baseline_mean": bmean,
+            "baseline_std": bstd,
+            "excursion": ex,
+            "snr_motion": snr,
+        }
+
+    repeat = None
+    if "R1" in walks and "R3" in walks:
+        e1 = walks["R1"]["excursion"].get("max_abs_excursion_db")
+        e3 = walks["R3"]["excursion"].get("max_abs_excursion_db")
+        if e1 and e3:
+            repeat = 100.0 * (1.0 - abs(e1 - e3) / max(e1, e3))
+
+    report = {
+        "file": path.name,
+        "board": data.get("board"),
+        "fw": data.get("fwVersion"),
+        "profile": (data.get("sessionProfile") or {}).get("id") or data.get("profile"),
+        "motion_n": len(rows),
+        "interval_ms": (data.get("motionRssi") or {}).get("intervalMs"),
+        "rest": rest,
+        "walks": walks,
+        "repeatability_pct": repeat,
+        "phase_meta": {
+            p.get("id"): {
+                "motionN": p.get("motionN"),
+                "motionMeanRssi": p.get("motionMeanRssi"),
+                "motionStdRssi": p.get("motionStdRssi"),
+                "motionRangeDb": p.get("motionRangeDb"),
+            }
+            for p in (data.get("phases") or [])
+            if p.get("id")
+        },
+    }
+
+    if verbose:
+        print(f"# motion={path.name} board={report['board']} fw={report['fw']} n={report['motion_n']} iv={report['interval_ms']}ms")
+        if rest:
+            print(
+                f"  REST  n={rest['n']} mean={rest['mean']:.2f} σ={rest['std']:.2f} "
+                f"range={rest['range']:.1f} p05/p95={rest['p05']:.1f}/{rest['p95']:.1f}"
+            )
+        for wid, w in walks.items():
+            ex = w["excursion"]
+            print(
+                f"  {wid}    n={w['stats']['n']} vs baseline {w['baseline_mean']:.2f}±{w['baseline_std']:.2f}  "
+                f"max|Δ|={ex.get('max_abs_excursion_db', float('nan')):.2f} dB  "
+                f"drop={ex.get('max_drop_db', float('nan')):.2f}  "
+                f"SNR_motion={w['snr_motion']:.2f}"
+            )
+        if repeat is not None:
+            print(f"  repeatability(R1↔R3) ≈ {repeat:.0f}%")
+        # Verdict framing (audit style)
+        strong = any(w["snr_motion"] >= 3.0 for w in walks.values())
+        weak = any(w["snr_motion"] >= 1.5 for w in walks.values())
+        if strong:
+            print("  FACT: walk-by excursion ≥ 3σ of rest — reproducible channel perturbation plausible")
+        elif weak:
+            print("  FACT: walk-by excursion ≥ 1.5σ — weak but measurable own-link effect")
+        else:
+            print("  FACT: no clear walk-by vs rest separation at this resolution/geometry")
+        print("  REJECTED: phone visible as WLAN AP/client (not in this measurement class)")
+    return report
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Motion-sensitivity RSSI analysis")
+    ap.add_argument("sessions", nargs="+", type=Path)
+    ap.add_argument("-q", "--quiet", action="store_true")
+    args = ap.parse_args()
+    reports = []
+    for p in args.sessions:
+        if not p.exists():
+            print(f"missing {p}", file=sys.stderr)
+            return 2
+        reports.append(analyze(p, verbose=not args.quiet))
+    if len(reports) == 2 and not args.quiet:
+        a, b = reports
+        print("\n# Mini↔S3 correlation (max |Δ| per walk phase)")
+        for wid in ("R1", "R3"):
+            ea = ((a.get("walks") or {}).get(wid) or {}).get("excursion", {}).get("max_abs_excursion_db")
+            eb = ((b.get("walks") or {}).get(wid) or {}).get("excursion", {}).get("max_abs_excursion_db")
+            if ea is None or eb is None:
+                continue
+            both = ea >= 1.5 and eb >= 1.5
+            print(f"  {wid}: {a['file']}={ea:.2f} dB  {b['file']}={eb:.2f} dB  "
+                  f"{'shared-env hint' if both else 'path-local / weak'}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

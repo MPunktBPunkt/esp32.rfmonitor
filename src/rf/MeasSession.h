@@ -7,12 +7,15 @@
 
 // Reproducible field measurement window (summary + ring of samples + phases).
 // Per-phase running aggregates survive ring wrap so A–G exports stay complete.
+// Optional high-rate own-link RSSI ring for motion-sensitivity campaigns.
 class MeasSession {
 public:
 #if defined(RFMON_BOARD_S3)
     static constexpr size_t kMaxSamples = 300;
+    static constexpr size_t kMaxMotionRssi = 1500;  // 300 s @ 200 ms
 #else
     static constexpr size_t kMaxSamples = 180;
+    static constexpr size_t kMaxMotionRssi = 900;   // 180 s @ 200 ms
 #endif
     static constexpr size_t kMaxPhases = 12;
 
@@ -22,17 +25,20 @@ public:
                uint16_t durationOverrideS = 0);
     bool stop();
     bool markPhase(const char* id, const char* note = "");
-    // Call from App loop — auto-stops when duration elapsed.
     bool loopAutoStop();
 
     const char* profileId() const { return profileId_; }
     uint16_t durationS() const { return durationS_; }
     const char* currentPhase() const { return currentPhaseId_; }
+    bool characterization() const { return characterization_; }
+    bool motionSensitivity() const { return motionSensitivity_; }
+    uint16_t motionRssiIntervalMs() const { return motionRssiIntervalMs_; }
 
     void noteSample(uint8_t score, uint8_t quality, int8_t deviation,
                     uint8_t apCount, uint8_t bleCount, uint8_t pressure,
                     uint8_t occupancy, uint8_t density, float jitter, uint8_t stability,
                     bool connected, float ownRssi, float radioDuty, uint8_t eventLevel);
+    void noteMotionRssi(int8_t rssi, bool connected);
     void appendStatusJson(JsonObject target) const;
     void appendExportJson(JsonObject target) const;
 
@@ -50,7 +56,7 @@ private:
         uint8_t density;
         uint8_t jitter;
         uint8_t stability;
-        uint8_t flags;      // bit0 = connected
+        uint8_t flags;
         int8_t ownRssi;
         uint8_t radioDuty;
         char phase[4];
@@ -59,11 +65,10 @@ private:
         char id[4];
         char note[40];
         uint32_t startSample;
-        uint32_t endSample;   // 0 while open
+        uint32_t endSample;
         uint32_t startUptimeS;
         uint32_t endUptimeS;
         bool open;
-        // Running aggregates (survive sample ring wrap).
         uint32_t n;
         uint32_t connectedN;
         double sumScore;
@@ -80,6 +85,18 @@ private:
         double sumDuty;
         uint8_t minScore;
         uint8_t maxScore;
+        // Motion RSSI stats (high-rate), survive ring wrap.
+        uint32_t motionN;
+        double motionSum;
+        double motionSumSq;
+        int8_t motionMin;
+        int8_t motionMax;
+    };
+    struct __attribute__((packed)) MotionSample {
+        uint32_t uptimeMs;
+        int8_t rssi;
+        uint8_t flags;     // bit0 connected
+        uint8_t phaseIdx;  // index into phases_, 255 = none
     };
 
     void closeOpenPhase(uint32_t sampleIdx, uint32_t uptimeS);
@@ -98,6 +115,8 @@ private:
     uint16_t bleIntervalS_ = 0;
     bool bleEnabled_ = true;
     bool characterization_ = false;
+    bool motionSensitivity_ = false;
+    uint16_t motionRssiIntervalMs_ = 0;
     char currentPhaseId_[4] = {0};
 
     uint32_t startS_ = 0;
@@ -120,4 +139,9 @@ private:
 
     Phase phases_[kMaxPhases];
     uint8_t phaseCount_ = 0;
+
+    MotionSample motionRing_[kMaxMotionRssi];
+    size_t motionHead_ = 0;
+    size_t motionCount_ = 0;
+    uint32_t motionTotal_ = 0;
 };

@@ -35,6 +35,16 @@ void RfAnalyzer::loop() {
     }
     lastWifi_ = st;
 
+    // Motion-sensitivity: high-rate own-link RSSI only (score stays on 4 s cadence).
+    if (session_.active() && session_.motionSensitivity()) {
+        uint16_t iv = session_.motionRssiIntervalMs();
+        if (iv < 50) iv = 50;
+        if (millis() - lastMotionRssiMs_ >= iv) {
+            lastMotionRssiMs_ = millis();
+            session_.noteMotionRssi((int8_t)WiFi.RSSI(), st == WL_CONNECTED);
+        }
+    }
+
     if (millis() - lastCompute_ >= 4000UL) {
         lastCompute_ = millis();
         recompute();

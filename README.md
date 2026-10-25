@@ -1,6 +1,6 @@
 # esp32.rfmonitor
 
-![Version](https://img.shields.io/badge/version-1.9.1-blue)
+![Version](https://img.shields.io/badge/version-1.10.0-blue)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Build](https://github.com/MPunktBPunkt/esp32.rfmonitor/actions/workflows/build.yml/badge.svg)](https://github.com/MPunktBPunkt/esp32.rfmonitor/actions/workflows/build.yml)
 [![Donate](https://img.shields.io/badge/Donate-PayPal-00457C.svg?logo=paypal)](https://www.paypal.com/donate/?business=martin%40bchmnn.de&currency_code=EUR)
@@ -20,11 +20,11 @@
 | Live-Status + History | Presence-System mit Raumgenauigkeit |
 | Hub-Telemetrie | Ersatz für `toolnode` |
 
-**Aktuell:** Firmware **1.9.1** · Lab Mini `192.168.178.87` · S3 `192.168.178.88` · Stand [docs/STATE.md](docs/STATE.md)
+**Aktuell:** Firmware **1.10.0** · Lab Mini `192.168.178.87` · S3 `192.168.178.88` · Stand [docs/STATE.md](docs/STATE.md)
 
 ---
 
-## Features (1.9.x)
+## Features (1.10.x)
 
 - WiFiManager-Setup (`ESP-RFMonitor-Setup`)
 - Periodischer **WLAN-/BLE-Scan** (instrumentiert; Mini single-core RF, S3 Dual-Core)
@@ -33,13 +33,14 @@
 - Location Profile **v2** (mean/stddev/min/max) + Deviation-Teile; NTP/`timeValid`
 - Radio Duty **5 m / 1 h / Lifetime**; „Why this score?“ in API/UI
 - **Channel History** + Multi-res History (Raw / 1 min / 15 min) + Baseline Drift
-- **Field Session Profiles** (`field` / `characterization` / `quick` / `diagnose`)
+- **Field Session Profiles** (`field` / `characterization` / `motion` / `quick` / `diagnose`)
 - Characterization-Phasen **A–G** inkl. **Phase-Aggregates** (überleben Ring-Wrap)
-- Session-Ring **180 (Mini) / 300 (S3)** Samples
+- **Motion Sensitivity**: 200 ms Own-Link-RSSI, Phasen **R0–R4** (kein Presence-Claim)
+- Session-Ring Score **180/300**; Motion-RSSI **900/1500**
 - AP Lifetime · Event/Alert ACK/Pin
 - Operator-UI: Timeline, Findings, Why?, History-Heatmap
 - SSE, Web-OTA, Betriebsmodi Live/Normal/Diagnose
-- Host-Tools: Score-Tests, Replay, Characterization
+- Host-Tools: Score-Tests, Replay, Characterization, Motion-Characterize
 
 ---
 
@@ -84,6 +85,7 @@ Heartbeat: `fwType` = `rfmonitor`, Nested-Objekt `rf` nach [Hub Contract v2](doc
 | [docs/OBSERVATION_MODEL.md](docs/OBSERVATION_MODEL.md) | Observation-Modell |
 | [docs/LOCATION_PROFILE.md](docs/LOCATION_PROFILE.md) | Standort-Baseline |
 | [docs/SCORE_CHARACTERIZATION.md](docs/SCORE_CHARACTERIZATION.md) | Protokoll A–G (stark stimulieren, 45–60 s/Phase) |
+| [docs/MOTION_SENSITIVITY.md](docs/MOTION_SENSITIVITY.md) | Own-Link Walk-by / RF-Sensitivität (R0–R4) |
 | [docs/STATE.md](docs/STATE.md) | Projektstand / Next |
 | [docs/evidence/](docs/evidence/) | Lab-, Kitchen-, Characterization-Packs |
 
@@ -93,6 +95,7 @@ python3 tools/test_rf_score.py
 tools/rf-score-replay docs/evidence/2026-10-25-lab-baseline/mini-session.json
 tools/rf-characterize sim
 tools/rf-characterize session docs/evidence/2026-10-25-score-characterization/s3-session.json
+tools/rf-motion-characterize docs/evidence/.../mini-session.json docs/evidence/.../s3-session.json
 ```
 
 ---

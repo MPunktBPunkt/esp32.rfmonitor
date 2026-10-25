@@ -115,6 +115,7 @@ private:
     uint8_t penStability_ = 0;
     uint8_t penDisconnect_ = 0;
     unsigned long lastCompute_ = 0;
+    unsigned long lastMotionRssiMs_ = 0;
     int8_t rssiWindow_[12] = {0};
     uint8_t rssiCount_ = 0;
     uint8_t rssiHead_ = 0;
