@@ -443,8 +443,9 @@ void App::registerRoutes() {
         JsonDocument doc;
         String type = server.hasArg("type") ? server.arg("type") : "";
         int level = server.hasArg("level") ? server.arg("level").toInt() : -1;
+        bool pinnedOnly = server.hasArg("pinned") && server.arg("pinned") == "1";
         events.toJson(doc["events"].to<JsonArray>(), events.capacity(),
-                      type.length() ? type.c_str() : nullptr, level);
+                      type.length() ? type.c_str() : nullptr, level, pinnedOnly);
         doc["capacity"] = (uint32_t)events.capacity();
         NetUtil::sendJson(server, 200, doc);
     });
@@ -452,6 +453,36 @@ void App::registerRoutes() {
         events.clear();
         JsonDocument resp;
         resp["ok"] = true;
+        NetUtil::sendJson(server, 200, resp);
+    });
+    server.on("/api/events/ack", HTTP_POST, [this]() {
+        JsonDocument body;
+        if (!NetUtil::readJsonBody(server, body)) return;
+        uint32_t id = body["id"].as<uint32_t>();
+        JsonDocument resp;
+        resp["ok"] = events.ack(id);
+        NetUtil::sendJson(server, resp["ok"] ? 200 : 404, resp);
+    });
+    server.on("/api/events/pin", HTTP_POST, [this]() {
+        JsonDocument body;
+        if (!NetUtil::readJsonBody(server, body)) return;
+        uint32_t id = body["id"].as<uint32_t>();
+        bool on = body["pinned"].isNull() ? true : body["pinned"].as<bool>();
+        JsonDocument resp;
+        resp["ok"] = events.pin(id, on);
+        NetUtil::sendJson(server, resp["ok"] ? 200 : 404, resp);
+    });
+    server.on("/api/alerts/ack", HTTP_POST, [this]() {
+        JsonDocument body;
+        if (!NetUtil::readJsonBody(server, body)) return;
+        JsonDocument resp;
+        if (!body["code"].isNull()) {
+            String code = body["code"].as<String>();
+            resp["ok"] = analyzer.ackAlert(code.c_str());
+        } else {
+            resp["ok"] = analyzer.ackAllAlerts();
+        }
+        analyzer.appendAlertState(resp["alert"].to<JsonObject>());
         NetUtil::sendJson(server, 200, resp);
     });
 

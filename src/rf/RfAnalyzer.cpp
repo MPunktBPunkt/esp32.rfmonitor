@@ -4,6 +4,7 @@
 #include "core/TimeBase.h"
 #include "BuildFlags.h"
 #include <math.h>
+#include <string.h>
 #include <ArduinoJson.h>
 
 void RfAnalyzer::begin(ConfigStore* cfg, EventLog* events, HistoryStore* history, RfScanner* scanner, BleTracker* ble) {
@@ -139,40 +140,101 @@ void RfAnalyzer::updateRadioDuty() {
     radioDuty1hPct_ = windowPct(60);
 }
 
+const char* RfAnalyzer::condName(CondState s) {
+    switch (s) {
+        case CondState::Pending: return "pending";
+        case CondState::Active: return "active";
+        case CondState::Acked: return "acked";
+        case CondState::Recovering: return "recovering";
+        default: return "inactive";
+    }
+}
+
 bool RfAnalyzer::tickHyst(Hyst& h, bool enterCond, bool exitCond,
                           unsigned long enterMs, unsigned long exitMs, unsigned long cooldownMs,
-                          const char* enterType, const char* enterTitle,
+                          const char* code, const char* enterType, const char* enterTitle,
                           const char* exitType, const char* exitTitle, const char* detail) {
     unsigned long now = millis();
+    h.code = code ? code : "";
     if (!h.active) {
         if (enterCond) {
-            if (h.enterSince == 0) h.enterSince = now;
+            if (h.enterSince == 0) {
+                h.enterSince = now;
+                h.state = CondState::Pending;
+            }
             if (now - h.enterSince >= enterMs && (h.lastEmit == 0 || now - h.lastEmit >= cooldownMs)) {
                 h.active = true;
+                h.acked = false;
                 h.clearSince = 0;
                 h.lastEmit = now;
+                h.activeSince = now;
+                h.state = CondState::Active;
                 if (events_) events_->warn(enterType, enterTitle, detail);
                 return true;
             }
         } else {
             h.enterSince = 0;
+            h.state = CondState::Inactive;
         }
     } else {
         if (exitCond) {
-            if (h.clearSince == 0) h.clearSince = now;
+            if (h.clearSince == 0) {
+                h.clearSince = now;
+                h.state = CondState::Recovering;
+            }
             if (now - h.clearSince >= exitMs) {
                 h.active = false;
+                h.acked = false;
                 h.enterSince = 0;
                 h.clearSince = 0;
                 h.lastEmit = now;
+                h.state = CondState::Inactive;
                 if (events_) events_->info(exitType, exitTitle, detail);
                 return true;
             }
         } else {
             h.clearSince = 0;
+            h.state = h.acked ? CondState::Acked : CondState::Active;
         }
     }
     return false;
+}
+
+RfAnalyzer::Hyst* RfAnalyzer::findAlert(const char* code) {
+    if (!code) return nullptr;
+    if (!strcmp(code, "score_low")) return &hystScore_;
+    if (!strcmp(code, "channel_pressure_high")) return &hystPressure_;
+    if (!strcmp(code, "data_quality_low")) return &hystQuality_;
+    if (!strcmp(code, "radio_budget_high")) return &hystDuty_;
+    if (!strcmp(code, "baseline_deviation")) return &hystDeviation_;
+    return nullptr;
+}
+
+bool RfAnalyzer::ackAlert(const char* code) {
+    Hyst* h = findAlert(code);
+    if (!h || !h->active) return false;
+    h->acked = true;
+    h->state = CondState::Acked;
+    return true;
+}
+
+bool RfAnalyzer::ackAllAlerts() {
+    bool any = false;
+    any |= ackAlert("score_low");
+    any |= ackAlert("channel_pressure_high");
+    any |= ackAlert("data_quality_low");
+    any |= ackAlert("radio_budget_high");
+    any |= ackAlert("baseline_deviation");
+    return any;
+}
+
+void RfAnalyzer::putAlertCond(JsonObject parent, const char* key, const Hyst& h) const {
+    JsonObject o = parent[key].to<JsonObject>();
+    o["code"] = h.code;
+    o["state"] = condName(h.state);
+    o["active"] = h.active;
+    o["acked"] = h.acked;
+    o["activeForMs"] = h.active && h.activeSince ? (millis() - h.activeSince) : 0;
 }
 
 void RfAnalyzer::updateAlerts() {
@@ -183,7 +245,7 @@ void RfAnalyzer::updateAlerts() {
 
     snprintf(detail, sizeof(detail), "%u", (unsigned)score_);
     tickHyst(hystScore_, score_ < warnScore, score_ > exitScore,
-             30000UL, 60000UL, 120000UL,
+             30000UL, 60000UL, 120000UL, "score_low",
              "rf.score_low", "RF-Score schlecht",
              "rf.score_recover", "RF-Score erholt", detail);
 
@@ -191,13 +253,13 @@ void RfAnalyzer::updateAlerts() {
     uint8_t congExit = congWarn > 10 ? (uint8_t)(congWarn - 10) : 0;
     snprintf(detail, sizeof(detail), "%u", (unsigned)congestion_);
     tickHyst(hystPressure_, congestion_ >= congWarn, congestion_ < congExit,
-             30000UL, 60000UL, 120000UL,
+             30000UL, 60000UL, 120000UL, "channel_pressure_high",
              "rf.channel_pressure_high", "Kanaldruck-Proxy hoch",
              "rf.channel_pressure_recover", "Kanaldruck-Proxy normal", detail);
 
     snprintf(detail, sizeof(detail), "%u", (unsigned)quality_);
     tickHyst(hystQuality_, quality_ < 50, quality_ > 60,
-             30000UL, 60000UL, 120000UL,
+             30000UL, 60000UL, 120000UL, "data_quality_low",
              "measurement.data_quality_low", "Messqualitaet niedrig",
              "measurement.data_quality_recover", "Messqualitaet ok", detail);
 
@@ -205,14 +267,14 @@ void RfAnalyzer::updateAlerts() {
     float dutyAlert = radioDuty5mPct_ > 0.0f ? radioDuty5mPct_ : radioDutyPct_;
     snprintf(detail, sizeof(detail), "%.0f", dutyAlert);
     tickHyst(hystDuty_, dutyAlert > 45.0f, dutyAlert < 35.0f,
-             45000UL, 90000UL, 180000UL,
+             45000UL, 90000UL, 180000UL, "radio_budget_high",
              "measurement.radio_budget_high", "Radio-Zeitbudget hoch",
              "measurement.radio_budget_ok", "Radio-Zeitbudget ok", detail);
 
     if (location_.valid()) {
         snprintf(detail, sizeof(detail), "%d", (int)location_.deviation());
         tickHyst(hystDeviation_, location_.deviation() <= -25, location_.deviation() >= -10,
-                 45000UL, 90000UL, 180000UL,
+                 45000UL, 90000UL, 180000UL, "baseline_deviation",
                  "rf.baseline_deviation", "Abweichung vom Standortnormal",
                  "rf.baseline_recover", "Lage nahe Standortnormal", detail);
     }
@@ -324,8 +386,9 @@ void RfAnalyzer::recompute() {
 }
 
 bool RfAnalyzer::anyAlert() const {
-    return hystScore_.active || hystPressure_.active || hystQuality_.active
-           || hystDuty_.active || hystDeviation_.active
+    auto open = [](const Hyst& h) { return h.active && !h.acked; };
+    return open(hystScore_) || open(hystPressure_) || open(hystQuality_)
+           || open(hystDuty_) || open(hystDeviation_)
            || WiFi.status() != WL_CONNECTED;
 }
 
@@ -339,6 +402,12 @@ void RfAnalyzer::appendAlertState(JsonObject target) const {
     flags["radio_budget_high"] = hystDuty_.active;
     flags["baseline_deviation"] = hystDeviation_.active;
     flags["wifi_disconnected"] = WiFi.status() != WL_CONNECTED;
+    JsonObject cond = target["conditions"].to<JsonObject>();
+    putAlertCond(cond, "score_low", hystScore_);
+    putAlertCond(cond, "channel_pressure_high", hystPressure_);
+    putAlertCond(cond, "data_quality_low", hystQuality_);
+    putAlertCond(cond, "radio_budget_high", hystDuty_);
+    putAlertCond(cond, "baseline_deviation", hystDeviation_);
 }
 
 void RfAnalyzer::appendHubContract(JsonObject target) const {
@@ -430,6 +499,13 @@ void RfAnalyzer::appendFindingsJson(JsonArray arr) const {
         snprintf(buf, sizeof(buf), "%u unbekannte APs", (unsigned)scanner_->unknownCount());
         add("info", "wifi.unknown_aps", buf);
     }
+    if (scanner_ && (scanner_->newCount() || scanner_->flappingCount() || scanner_->disappearedCount())) {
+        char buf[72];
+        snprintf(buf, sizeof(buf), "APs new %u · flap %u · gone %u",
+                 (unsigned)scanner_->newCount(), (unsigned)scanner_->flappingCount(),
+                 (unsigned)scanner_->disappearedCount());
+        add("info", "wifi.ap_life", buf);
+    }
     if (ble_ && ble_->newCount() > 0) {
         char buf[48];
         snprintf(buf, sizeof(buf), "%u neue BLE-Geraete im Fenster", (unsigned)ble_->newCount());
@@ -455,6 +531,7 @@ void RfAnalyzer::appendObservationJson(JsonObject target) const {
         wifi["scanSuccesses"] = scanner_->successCount();
         wifi["failRatePct"] = scanner_->failRatePct();
         wifi["capacity"] = (uint32_t)scanner_->capacity();
+        scanner_->appendLifeJson(wifi["apLife"].to<JsonObject>());
     }
     JsonObject bleo = obs["ble"].to<JsonObject>();
     if (ble_) {
@@ -578,6 +655,7 @@ void RfAnalyzer::appendStatusJson(JsonObject target) const {
         target["scanFailCount"] = scanner_->failCount();
         target["wifiScanDurationMs"] = scanner_->lastScanDurationMs();
         target["wifiScanFailRate"] = scanner_->failRatePct();
+        scanner_->appendLifeJson(target["apLife"].to<JsonObject>());
     }
     if (ble_) {
         target["bleCount"] = ble_->deviceCount();
