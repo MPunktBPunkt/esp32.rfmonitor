@@ -2,7 +2,7 @@
 
 | | |
 |--|--|
-| Version | **1.6.1** (Validation + Mini BLE hang fix) |
+| Version | **1.7.0** (AP Lifetime + Event ACK/Pin) |
 | Lab | Mini `.87` + S3 `.88` |
 | Evidence | [lab-baseline](evidence/2026-10-25-lab-baseline/) · [kitchen side-by-side](evidence/2026-10-25-kitchen-side-by-side/) |
 | Hub | [HUB_CONTRACT.md](HUB_CONTRACT.md) |
@@ -20,11 +20,15 @@ Observability → Location/Session → Score v2 → Operator-UI → Hub-Contract
 - Kitchen side-by-side Evidence (Fritzbox-nah)
 - **1.6.1:** BLE-Scan-Watchdog; Mini Dual-Core-Worker aus (NimBLE-Hang starvete WiFi)
 
+## Erledigt in 1.7.0
+
+- AP Lifetime: firstSeen / seenCount / NEW·PERSISTENT·FLAPPING·DISAPPEARED
+- Alert Conditions: pending→active→acked→recovering + `/api/alerts/ack`
+- Event ACK/Pin (`/api/events/ack`, `/api/events/pin`); Clear behält Pins
+
 ## Als Nächstes
 
 **P1 Operator**
-- [ ] Event State Machine + ACK/Pin
-- [ ] AP firstSeen / seenCount → NEW/PERSISTENT/FLAPPING
 - [ ] Channel History
 - [ ] Multi-resolution History
 - [ ] Baseline-Drift-Metrik

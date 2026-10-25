@@ -49,23 +49,33 @@ public:
     void appendIoValues(JsonObject ios) const;
     void appendWhyJson(JsonObject target) const;
     bool anyAlert() const;
+    bool ackAlert(const char* code);
+    bool ackAllAlerts();
 
 private:
+    enum class CondState : uint8_t { Inactive = 0, Pending = 1, Active = 2, Acked = 3, Recovering = 4 };
     struct Hyst {
+        CondState state = CondState::Inactive;
         bool active = false;
+        bool acked = false;
         unsigned long enterSince = 0;
         unsigned long clearSince = 0;
         unsigned long lastEmit = 0;
+        unsigned long activeSince = 0;
+        const char* code = "";
     };
     void recompute();
     void recomputeQuality();
     void updateAlerts();
     void updateRadioDuty();
     bool tickHyst(Hyst& h, bool enterCond, bool exitCond, unsigned long enterMs, unsigned long exitMs,
-                  unsigned long cooldownMs, const char* enterType, const char* enterTitle,
+                  unsigned long cooldownMs, const char* code, const char* enterType, const char* enterTitle,
                   const char* exitType, const char* exitTitle, const char* detail);
+    void putAlertCond(JsonObject parent, const char* key, const Hyst& h) const;
+    static const char* condName(CondState s);
     static void putProxy(JsonObject parent, const char* key, uint8_t value, const char* basis);
     static void putParts(JsonObject parts, const RfScoreBreakdown& b);
+    Hyst* findAlert(const char* code);
 
     ConfigStore* cfg_ = nullptr;
     EventLog* events_ = nullptr;

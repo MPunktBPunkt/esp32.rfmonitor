@@ -170,7 +170,8 @@ tr.own{background:rgba(45,212,168,.08)}
         <div class="break" id="why-break" style="margin-top:8px"></div>
       </div>
       <div class="panel">
-        <h3>Aktuelle Befunde</h3>
+        <h3>Aktuelle Befunde / Alerts</h3>
+        <div id="alert-conds" class="break" style="margin-bottom:8px"></div>
         <div id="findings" class="break"></div>
       </div>
     </div>
@@ -239,6 +240,10 @@ tr.own{background:rgba(45,212,168,.08)}
             <option value="known">bekannt</option>
             <option value="unknown">unbekannt</option>
             <option value="own">eigenes</option>
+            <option value="new">NEW</option>
+            <option value="persistent">PERSISTENT</option>
+            <option value="flapping">FLAPPING</option>
+            <option value="disappeared">DISAPPEARED</option>
           </select>
         </div>
         <div><label>Sortierung</label>
@@ -253,7 +258,8 @@ tr.own{background:rgba(45,212,168,.08)}
         <button class="btn btn-a" onclick="loadWifi()">Aktualisieren</button>
         <button class="btn" onclick="doWifiScan()">Scan jetzt</button>
       </div>
-      <table style="margin-top:10px"><thead><tr><th>SSID</th><th>RSSI</th><th>CH</th><th>Auth</th><th>BSSID</th><th></th></tr></thead>
+      <div class="meta" id="ap-life-sum" style="margin-top:8px"></div>
+      <table style="margin-top:10px"><thead><tr><th>SSID</th><th>RSSI</th><th>CH</th><th>Life</th><th>Seen</th><th>BSSID</th><th></th></tr></thead>
       <tbody id="ap-body"></tbody></table>
     </div>
   </div>
@@ -452,6 +458,22 @@ function renderFindings(list){
     return '<div class="rowb"><span style="color:'+col+'">'+mark+'</span><span style="grid-column:span 2">'+esc(f.text||f.code||'')+'</span></div>';
   }).join('');
 }
+function renderAlertConds(alert){
+  const el=$('alert-conds'); if(!el) return;
+  const cond=(alert&&alert.conditions)||{};
+  const keys=Object.keys(cond);
+  const active=keys.filter(k=>cond[k]&&cond[k].active);
+  if(!active.length){el.innerHTML='<div class="meta">keine aktiven Alert-Conditions</div>';return}
+  el.innerHTML=active.map(k=>{
+    const c=cond[k]; const sec=Math.round((c.activeForMs||0)/1000);
+    const st=c.state|| (c.acked?'acked':'active');
+    return '<div class="rowb"><span>⚠</span><span>'+esc(k)+' · '+st+(sec?' · '+sec+'s':'')+'</span>'+
+      (c.acked?'<span class="meta">ACK</span>':'<button class="btn" style="padding:2px 8px;font-size:11px" onclick="ackAlert(\''+k+'\')">ACK</button>')+'</div>';
+  }).join('');
+}
+function ackAlert(code){jpost('/api/alerts/ack',code?{code:code}:{}).then(()=>jget('/api/status').then(applyStatus))}
+function ackEvent(id){jpost('/api/events/ack',{id:id}).then(loadEvents)}
+function pinEvent(id,on){jpost('/api/events/pin',{id:id,pinned:!!on}).then(loadEvents)}
 function renderHeat(channels){
   lastChannels=channels||lastChannels||[];
   const max=Math.max(1,...lastChannels.map(c=>c.count||0));
@@ -497,7 +519,12 @@ function applyStatus(s){
   $('g-duty').textContent=Number(duty5||0).toFixed(1);
   renderBreak(rf.scoreParts);
   renderWhy(rf.why||((rf.assessment||{}).why),loc);
+  renderAlertConds(rf.alert||{});
   renderFindings(rf.findings||[]);
+  const life=rf.apLife||((rf.observation&&rf.observation.wifi&&rf.observation.wifi.apLife)||{});
+  if($('ap-life-sum')&&life.tracked!=null){
+    $('ap-life-sum').textContent='AP Life · visible '+life.visible+' · new '+life.new+' · persistent '+life.persistent+' · flap '+life.flapping+' · gone '+life.disappeared;
+  }
   $('kpi-grid').innerHTML=
     kpi(rf.rfScore||0,'','Score v'+window._sv)+
     kpi(rf.scoreV1!=null?rf.scoreV1:'-','','Score v1')+
@@ -645,11 +672,13 @@ function renderWifi(){
   const minR=Number($('ap-rssi')?$('ap-rssi').value:-999);
   const chF=$('ap-ch')&&$('ap-ch').value!==''?Number($('ap-ch').value):null;
   rows=rows.filter(a=>{
-    if(a.rssi<minR) return false;
+    if(f!=='disappeared' && a.life==='disappeared' && f!=='all') return false;
+    if(a.life!=='disappeared' && a.rssi<minR) return false;
     if(chF!=null && a.channel!==chF) return false;
     if(f==='known' && !a.known) return false;
     if(f==='unknown' && a.known) return false;
     if(f==='own' && !(ownSsid && a.ssid && a.ssid.toLowerCase()===ownSsid.toLowerCase())) return false;
+    if(['new','persistent','flapping','disappeared'].indexOf(f)>=0 && a.life!==f) return false;
     return true;
   });
   rows.sort((a,b)=>{
@@ -659,8 +688,9 @@ function renderWifi(){
   });
   $('ap-body').innerHTML=rows.map(a=>{
     const isOwn=ownSsid && a.ssid && a.ssid.toLowerCase()===ownSsid.toLowerCase();
-    return '<tr class="'+(isOwn?'own':'')+'"><td>'+(a.hidden?'<i>versteckt</i>':esc(a.ssid))+(isOwn?' <span class="tag k">eigen</span>':'')+'</td><td>'+a.rssi+'</td><td>'+a.channel+'</td><td>'+(ENC[a.enc]||a.enc)+'</td><td class="mono">'+a.bssid+'</td><td><span class="tag '+(a.known?'k':'u')+'">'+(a.known?'bekannt':'neu')+'</span></td></tr>';
-  }).join('')||'<tr><td colspan="6">keine Daten</td></tr>';
+    const life=(a.life||'persistent').toUpperCase();
+    return '<tr class="'+(isOwn?'own':'')+(a.life==='disappeared'?' meta':'')+'"><td>'+(a.hidden?'<i>versteckt</i>':esc(a.ssid))+(isOwn?' <span class="tag k">eigen</span>':'')+'</td><td>'+a.rssi+'</td><td>'+a.channel+'</td><td><span class="tag">'+(life)+'</span></td><td>'+(a.seenCount!=null?a.seenCount:'-')+'</td><td class="mono">'+a.bssid+'</td><td><span class="tag '+(a.known?'k':'u')+'">'+(a.known?'bekannt':'unk')+'</span></td></tr>';
+  }).join('')||'<tr><td colspan="7">keine Daten</td></tr>';
 }
 function loadWifi(){
   jget('/api/wifi/list').then(d=>{ lastAps=d.aps||[]; renderWifi(); });
@@ -678,7 +708,14 @@ function loadEvents(){
   let u='/api/events/recent'; const q=[]; if(t) q.push('type='+encodeURIComponent(t)); if(l!=='') q.push('level='+l); if(q.length) u+='?'+q.join('&');
   jget(u).then(d=>{
     lastEvents=d.events||[];
-    $('ev-term').innerHTML=lastEvents.map(e=>'<div class="e lvl'+e.level+'"><div class="t">'+e.ts+'s</div><div><b>'+esc(e.type)+'</b> — '+esc(e.title)+(e.details?' <span class="meta">'+esc(e.details)+'</span>':'')+'</div></div>').join('')||'<div class="meta">keine Ereignisse</div>';
+    $('ev-term').innerHTML=lastEvents.map(e=>{
+      const flags=(e.pinned?'📌 ':'')+(e.acked?'ACK ':'');
+      return '<div class="e lvl'+e.level+'"><div class="t">'+e.ts+'s</div><div><b>'+esc(e.type)+'</b> — '+esc(e.title)+(e.details?' <span class="meta">'+esc(e.details)+'</span>':'')+
+        ' <span class="meta">'+flags+'</span> '+
+        '<button class="btn" style="padding:1px 6px;font-size:10px" onclick="ackEvent('+e.id+')">ACK</button> '+
+        '<button class="btn" style="padding:1px 6px;font-size:10px" onclick="pinEvent('+e.id+','+(e.pinned?'false':'true')+')">'+(e.pinned?'Unpin':'Pin')+'</button>'+
+        '</div></div>';
+    }).join('')||'<div class="meta">keine Ereignisse</div>';
     drawTimeline();
   });
 }
