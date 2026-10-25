@@ -20,23 +20,26 @@
 | Live-Status + History | Presence-System mit Raumgenauigkeit |
 | Hub-Telemetrie | Ersatz für `toolnode` |
 
+**Aktuell:** Firmware **1.9.1** · Lab Mini `192.168.178.87` · S3 `192.168.178.88` · Stand [docs/STATE.md](docs/STATE.md)
+
 ---
 
-## Features v1.6
+## Features (1.9.x)
 
 - WiFiManager-Setup (`ESP-RFMonitor-Setup`)
-- Periodischer **WLAN-/BLE-Scan** (instrumentiert)
-- **Observation Model** + **RF-Score v2** + Location/Session/Snapshot
+- Periodischer **WLAN-/BLE-Scan** (instrumentiert; Mini single-core RF, S3 Dual-Core)
+- **Observation → Derived → Assessment** + **RF-Score v1/v2** (aktiv v2)
 - **Hub-Contract v2** (`rf.alert`, scoreV1/V2, Quality, Deviation) — [docs/HUB_CONTRACT.md](docs/HUB_CONTRACT.md)
 - Location Profile **v2** (mean/stddev/min/max) + Deviation-Teile; NTP/`timeValid`
 - Radio Duty **5 m / 1 h / Lifetime**; „Why this score?“ in API/UI
-- Score Unit-Tests + Replay (`tools/rf-score-replay`)
-- **Channel History** + Multi-res History (Raw / 1 min / 15 min)
-- **Field Session Profiles** + Characterization-Phasen A–G
-- AP Lifetime · Event/Alert ACK/Pin · Baseline Drift
+- **Channel History** + Multi-res History (Raw / 1 min / 15 min) + Baseline Drift
+- **Field Session Profiles** (`field` / `characterization` / `quick` / `diagnose`)
+- Characterization-Phasen **A–G** inkl. **Phase-Aggregates** (überleben Ring-Wrap)
+- Session-Ring **180 (Mini) / 300 (S3)** Samples
+- AP Lifetime · Event/Alert ACK/Pin
 - Operator-UI: Timeline, Findings, Why?, History-Heatmap
-- Event-Hysterese; PSRAM (S3) + Dual-Core RF-Worker (S3)
 - SSE, Web-OTA, Betriebsmodi Live/Normal/Diagnose
+- Host-Tools: Score-Tests, Replay, Characterization
 
 ---
 
@@ -44,8 +47,8 @@
 
 | Board | PlatformIO-Env | Hinweis |
 |-------|----------------|---------|
-| ESP32 Mini D1 | `rfmonitor-mini` | 2 Cores, kein PSRAM → kleine Caps |
-| ESP32-S3 | `rfmonitor-s3` | PSRAM wenn vorhanden → große Caps |
+| ESP32 Mini D1 | `rfmonitor-mini` | kein PSRAM → kleinere Caps; `RFMON_USE_DUAL_CORE=0` |
+| ESP32-S3 | `rfmonitor-s3` | PSRAM → größere Caps; Dual-Core RF-Worker |
 
 Details: [docs/HARDWARE.md](docs/HARDWARE.md). WLAN- und BLE-Scans laufen **nacheinander** (gemeinsames Radio).
 
@@ -58,32 +61,38 @@ pio run -e rfmonitor-mini --target upload
 pio device monitor
 ```
 
-1. Hotspot `ESP-RFMonitor-Setup` → WLAN + Hub-IP
-2. Browser: `http://<ESP-IP>/` → Monitor-UI (Config-Tab für Name/Intervalle)
-3. Gerät erscheint im [ESP-Hub](https://github.com/MPunktBPunkt/iobroker.esp-hub)
+1. Hotspot `ESP-RFMonitor-Setup` → WLAN + Hub-IP  
+2. Browser: `http://<ESP-IP>/` → Monitor-UI (Config-Tab für Name/Intervalle)  
+3. Web-OTA: `/ota` bzw. `POST /ota-upload`  
+4. Gerät erscheint im [ESP-Hub](https://github.com/MPunktBPunkt/iobroker.esp-hub)
 
 ---
 
 ## Hub-IO-Werte
 
-`wifi_rssi`, `wifi_rssi_avg`, `wifi_rssi_jitter`, `rf_score`, `rf_score_version`, `measurement_quality`, `location_deviation`, `ap_count`, `ble_count`, `beacon_count`, `channel_load`, `channel_pressure_proxy`, `scan_fail_count`, `radio_duty_pct`, `radio_duty_5m_pct`, `radio_duty_1h_pct`
+`wifi_rssi`, `wifi_rssi_avg`, `wifi_rssi_jitter`, `rf_score`, `rf_score_v1`, `rf_score_v2`, `rf_score_version`, `measurement_quality`, `location_deviation`, `ap_count`, `ble_count`, `beacon_count`, `channel_load`, `channel_pressure_proxy`, `scan_fail_count`, `radio_duty_pct`, `radio_duty_5m_pct`, `radio_duty_1h_pct`, `alert_any`, …
 
-Heartbeat-Feld `fwType`: `rfmonitor`
+Heartbeat: `fwType` = `rfmonitor`, Nested-Objekt `rf` nach [Hub Contract v2](docs/HUB_CONTRACT.md).
 
 ---
 
-## RF-Score & Observation
+## RF-Score, Session & Evidence
 
-- Score: [docs/RF_SCORE.md](docs/RF_SCORE.md) (v1+v2 parallel, aktiv v2)
-- Modell: [docs/OBSERVATION_MODEL.md](docs/OBSERVATION_MODEL.md)
-- Characterization: [docs/SCORE_CHARACTERIZATION.md](docs/SCORE_CHARACTERIZATION.md)
-- Stand: [docs/STATE.md](docs/STATE.md)
+| Doc | Inhalt |
+|-----|--------|
+| [docs/RF_SCORE.md](docs/RF_SCORE.md) | Score v1+v2 |
+| [docs/OBSERVATION_MODEL.md](docs/OBSERVATION_MODEL.md) | Observation-Modell |
+| [docs/LOCATION_PROFILE.md](docs/LOCATION_PROFILE.md) | Standort-Baseline |
+| [docs/SCORE_CHARACTERIZATION.md](docs/SCORE_CHARACTERIZATION.md) | Protokoll A–G (stark stimulieren, 45–60 s/Phase) |
+| [docs/STATE.md](docs/STATE.md) | Projektstand / Next |
+| [docs/evidence/](docs/evidence/) | Lab-, Kitchen-, Characterization-Packs |
 
 ```bash
 pio test -e native
 python3 tools/test_rf_score.py
 tools/rf-score-replay docs/evidence/2026-10-25-lab-baseline/mini-session.json
 tools/rf-characterize sim
+tools/rf-characterize session docs/evidence/2026-10-25-score-characterization/s3-session.json
 ```
 
 ---
@@ -93,13 +102,15 @@ tools/rf-characterize sim
 | Endpoint | Funktion |
 |----------|----------|
 | `/api/status` | Gesamtstatus inkl. `hw` + Observation |
-| `/api/rf/status` `/observations` `/snapshot` `/history` | RF (`history?res=1m\|15m`) |
+| `/api/rf/status` `/observations` `/snapshot` `/score` | RF Live |
+| `/api/rf/history?res=raw\|1m\|15m` | Multi-res History |
 | `/api/rf/channels/history` | Channel-Druck über Zeit |
 | `/api/location/get` `/capture` `/clear` | Standort-Baseline |
-| `/api/session/profiles` `/start` `/phase` `/stop` `/export` | Mess-Session (Profile) |
+| `/api/session/profiles` `/start` `/phase` `/stop` `/export` | Mess-Session (Profile + Phasen A–G) |
 | `/api/wifi/list` `/channels` `/scan` | WLAN |
 | `/api/ble/list` `/beacons` `/scan` | BLE |
-| `/api/system/hw` | Cores / PSRAM / Caps |
+| `/api/events/recent` `/ack` `/pin` · `/api/alerts/ack` | Events / Alerts |
+| `/api/system/hw` `/restart` | Hardware / Neustart |
 | `/api/config/get` `/save` `/test` | Config |
 | `/events` | SSE |
 | `/ota` `/ota-upload` | Web-OTA |
