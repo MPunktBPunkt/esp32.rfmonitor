@@ -356,12 +356,27 @@ void App::registerRoutes() {
     });
     server.on("/api/rf/history", HTTP_GET, [this]() {
         JsonDocument doc;
-        history.toJson(HistoryStore::RSSI, doc["rssi"].to<JsonArray>());
-        history.toJson(HistoryStore::RF_SCORE, doc["rf_score"].to<JsonArray>());
-        history.toJson(HistoryStore::AP_COUNT, doc["ap_count"].to<JsonArray>());
-        history.toJson(HistoryStore::BLE_COUNT, doc["ble_count"].to<JsonArray>());
-        history.toJson(HistoryStore::DATA_QUALITY, doc["data_quality"].to<JsonArray>());
-        doc["capacity"] = (uint32_t)history.capacity();
+        HistoryStore::Res res = HistoryStore::RAW;
+        if (server.hasArg("res")) {
+            String r = server.arg("res");
+            if (r == "1m") res = HistoryStore::M1;
+            else if (r == "15m") res = HistoryStore::M15;
+        }
+        history.toJson(HistoryStore::RSSI, doc["rssi"].to<JsonArray>(), 0, res);
+        history.toJson(HistoryStore::RF_SCORE, doc["rf_score"].to<JsonArray>(), 0, res);
+        history.toJson(HistoryStore::AP_COUNT, doc["ap_count"].to<JsonArray>(), 0, res);
+        history.toJson(HistoryStore::BLE_COUNT, doc["ble_count"].to<JsonArray>(), 0, res);
+        history.toJson(HistoryStore::DATA_QUALITY, doc["data_quality"].to<JsonArray>(), 0, res);
+        history.toJson(HistoryStore::CHANNEL_PRESSURE, doc["channel_pressure"].to<JsonArray>(), 0, res);
+        doc["res"] = HistoryStore::resName(res);
+        doc["capacity"] = (uint32_t)history.capacity(res);
+        history.appendMetaJson(doc["meta"].to<JsonObject>());
+        NetUtil::sendJson(server, 200, doc);
+    });
+    server.on("/api/rf/channels/history", HTTP_GET, [this]() {
+        JsonDocument doc;
+        history.channelsToJson(doc["points"].to<JsonArray>());
+        history.appendMetaJson(doc["meta"].to<JsonObject>());
         NetUtil::sendJson(server, 200, doc);
     });
     server.on("/api/wifi/list", HTTP_GET, [this]() {

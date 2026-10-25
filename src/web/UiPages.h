@@ -276,14 +276,24 @@ tr.own{background:rgba(45,212,168,.08)}
 
   <div class="pane" id="pane-history">
     <div class="panel" style="margin-bottom:14px">
-      <h3>Zeitfenster</h3>
-      <div class="seg" id="hist-win">
-        <button type="button" data-n="30" onclick="setHistWin(30)">~2 min</button>
-        <button type="button" data-n="90" class="on" onclick="setHistWin(90)">~6 min</button>
-        <button type="button" data-n="180" onclick="setHistWin(180)">Ring</button>
+      <h3>Aufloesung / Zeitfenster</h3>
+      <div class="seg" id="hist-res">
+        <button type="button" data-r="raw" class="on" onclick="setHistRes('raw')">Raw</button>
+        <button type="button" data-r="1m" onclick="setHistRes('1m')">1 min</button>
+        <button type="button" data-r="15m" onclick="setHistRes('15m')">15 min</button>
+      </div>
+      <div class="seg" id="hist-win" style="margin-top:8px">
+        <button type="button" data-n="30" onclick="setHistWin(30)">30</button>
+        <button type="button" data-n="90" class="on" onclick="setHistWin(90)">90</button>
+        <button type="button" data-n="180" onclick="setHistWin(180)">180</button>
         <button type="button" data-n="0" onclick="setHistWin(0)">alles</button>
       </div>
       <div class="meta" id="hist-meta" style="margin-top:8px"></div>
+    </div>
+    <div class="panel" style="margin-bottom:14px">
+      <h3>Channel History <span class="meta">(AP-Druck über Zeit)</span></h3>
+      <canvas id="h-chhist" width="800" height="160"></canvas>
+      <div class="meta" id="chhist-meta" style="margin-top:6px"></div>
     </div>
     <div class="grid2">
       <div class="panel"><h3>RSSI</h3><canvas id="h-rssi"></canvas></div>
@@ -291,7 +301,7 @@ tr.own{background:rgba(45,212,168,.08)}
     </div>
     <div class="grid2">
       <div class="panel"><h3>APs</h3><canvas id="h-ap"></canvas></div>
-      <div class="panel"><h3>BLE</h3><canvas id="h-ble"></canvas></div>
+      <div class="panel"><h3>Pressure*</h3><canvas id="h-press"></canvas></div>
     </div>
   </div>
 
@@ -364,8 +374,10 @@ function $(id){return document.getElementById(id)}
 function jget(u){return fetch(u).then(r=>r.json())}
 function jpost(u,b){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json())}
 const ENC={0:'OPEN',1:'WEP',2:'WPA',3:'WPA2',4:'WPA/WPA2',5:'WPA2-ENT',6:'WPA3',7:'WPA2/WPA3',8:'WAPI'};
-let hist={rssi:[],rf_score:[],ap_count:[],ble_count:[]};
+let hist={rssi:[],rf_score:[],ap_count:[],ble_count:[],channel_pressure:[]};
 let histWin=90;
+let histRes='raw';
+let chHist=[];
 let lastChannels=[];
 let lastAps=[];
 let ownSsid='';
@@ -542,7 +554,9 @@ function applyStatus(s){
     const dist=(loc.distribution&&loc.distribution.score)||{};
     const sd=dist.stddev!=null?(' ±'+Number(dist.stddev).toFixed(1)):'';
     const stale=loc.stale?' · STALE':'';
-    $('loc-status').textContent='Baseline v'+(loc.profileVersion||1)+' · Score≈'+Number(b.score||0).toFixed(0)+sd+' · APs≈'+Number(b.apCount||0).toFixed(1)+' · n='+loc.sampleCount+stale;
+    const dr=loc.drift||{};
+    const drift=dr.magnitude!=null?(' · drift '+Number(dr.magnitude).toFixed(0)+(dr.elevated?'!':'')):'';
+    $('loc-status').textContent='Baseline v'+(loc.profileVersion||1)+' · Score≈'+Number(b.score||0).toFixed(0)+sd+' · APs≈'+Number(b.apCount||0).toFixed(1)+' · n='+loc.sampleCount+stale+drift;
     $('loc-bar').style.width='100%';
   }else{
     $('loc-status').textContent='keine Baseline';
@@ -589,6 +603,7 @@ function applyStatus(s){
   if((d5||0)>45) warns.push('Radio-Zeitbudget 5m hoch');
   if(dev!=null && dev<=-25) warns.push('Abweichung vom Standortnormal');
   if(loc.stale) warns.push('Baseline veraltet');
+  if(loc.drift&&loc.drift.elevated) warns.push('Baseline-Drift erhoeht');
   if((s.rssi||-30)<-75) warns.push('eigene Verbindung schwach');
   if(loc.capturing) warns.push('Baseline-Aufnahme laeuft');
   $('rf-warn').style.display=warns.length?'block':'none';
@@ -611,8 +626,17 @@ function sliceHist(series){
 function setHistWin(n){
   histWin=n;
   document.querySelectorAll('#hist-win button').forEach(b=>b.classList.toggle('on',Number(b.dataset.n)===n));
-  $('hist-meta').textContent=n===0?'gesamter Ringbuffer':('letzte '+n+' Punkte');
+  updateHistMeta();
   drawAll();
+}
+function setHistRes(r){
+  histRes=r||'raw';
+  document.querySelectorAll('#hist-res button').forEach(b=>b.classList.toggle('on',b.dataset.r===histRes));
+  loadHistory();
+}
+function updateHistMeta(){
+  const el=$('hist-meta'); if(!el) return;
+  el.textContent='Res '+histRes+' · '+(histWin===0?'gesamter Ring':'letzte '+histWin+' Punkte');
 }
 function drawTimeline(){
   const c=$('c-timeline'); if(!c) return;
@@ -650,18 +674,56 @@ function drawTimeline(){
   }
   $('tl-leg').textContent='gelb=Score · gruen=APs · grau=BLE · Striche=Events';
 }
+function drawChannelHistory(){
+  const c=$('h-chhist'); if(!c) return;
+  const pts=chHist||[];
+  const w=c.width=c.clientWidth||800, h=c.height=160;
+  const ctx=c.getContext('2d'); ctx.clearRect(0,0,w,h);
+  const meta=$('chhist-meta');
+  if(!pts.length){
+    ctx.fillStyle='#8aa094'; ctx.font='12px IBM Plex Mono,monospace';
+    ctx.fillText('warte auf Channel-Snaps (alle 30s)…',12,24);
+    if(meta) meta.textContent='keine Punkte';
+    return;
+  }
+  const rows=14, cols=pts.length;
+  const cellW=Math.max(2,(w-40)/cols), cellH=(h-20)/rows;
+  let peak=1;
+  pts.forEach(p=>{(p.ch||[]).forEach(v=>{if(v>peak)peak=v})});
+  for(let r=0;r<rows;r++){
+    const y=10+r*cellH;
+    ctx.fillStyle='#8aa094'; ctx.font='10px IBM Plex Mono,monospace';
+    if(r%2===0) ctx.fillText(String(r+1),2,y+cellH*0.75);
+    for(let i=0;i<cols;i++){
+      const v=(pts[i].ch&&pts[i].ch[r])||0;
+      const t=v/peak;
+      const g=Math.round(20+t*140), b=Math.round(30+t*80);
+      ctx.fillStyle=v?('rgb('+(40+Math.round(t*180))+','+g+','+b+')'):'#121a17';
+      ctx.fillRect(36+i*cellW, y, Math.max(1,cellW-0.5), Math.max(1,cellH-0.5));
+    }
+  }
+  if(meta) meta.textContent=pts.length+' Snaps · peak max '+peak+' APs/Kanal · Interval ~30s';
+}
 function drawAll(){
   drawLine('c-rssi',sliceHist(hist.rssi),'#2dd4a8',-100,-20);
   drawLine('c-score',sliceHist(hist.rf_score),'#f0b429',0,100);
   drawLine('h-rssi',sliceHist(hist.rssi),'#2dd4a8',-100,-20);
   drawLine('h-score',sliceHist(hist.rf_score),'#f0b429',0,100);
   drawLine('h-ap',sliceHist(hist.ap_count),'#f0b429',0,null);
-  drawLine('h-ble',sliceHist(hist.ble_count),'#2dd4a8',0,null);
+  drawLine('h-press',sliceHist(hist.channel_pressure),'#ef5b5b',0,100);
+  drawChannelHistory();
   drawTimeline();
 }
 function loadHistory(){
-  jget('/api/rf/history').then(h=>{
-    hist.rssi=h.rssi||[]; hist.rf_score=h.rf_score||[]; hist.ap_count=h.ap_count||[]; hist.ble_count=h.ble_count||[];
+  updateHistMeta();
+  const q=histRes&&histRes!=='raw'?('?res='+encodeURIComponent(histRes)):'';
+  Promise.all([
+    jget('/api/rf/history'+q),
+    jget('/api/rf/channels/history')
+  ]).then(([h,ch])=>{
+    hist.rssi=h.rssi||[]; hist.rf_score=h.rf_score||[]; hist.ap_count=h.ap_count||[];
+    hist.ble_count=h.ble_count||[]; hist.channel_pressure=h.channel_pressure||[];
+    chHist=ch.points||[];
     drawAll(); drawSpark(hist.rssi);
   }).catch(()=>{});
 }

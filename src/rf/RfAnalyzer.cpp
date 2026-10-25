@@ -364,6 +364,7 @@ void RfAnalyzer::recompute() {
         history_->push(HistoryStore::RSSI, (float)rssi);
         history_->push(HistoryStore::RF_SCORE, (float)score_);
         history_->push(HistoryStore::DATA_QUALITY, (float)quality_);
+        history_->pushChannels(ch);
     }
 
     session_.noteSample(score_, quality_, location_.deviation(), aps, bleN, congestion_,
@@ -487,6 +488,7 @@ void RfAnalyzer::appendFindingsJson(JsonArray arr) const {
     if (location_.valid()) {
         if (location_.stale()) add("info", "loc.stale", "Standort-Baseline aelter als 90 Tage");
         if (location_.deviation() <= -25) add("warn", "loc.dev_high", "Lage weicht vom Standortnormal ab");
+        else if (location_.driftMagnitude() >= 20.0f) add("info", "loc.drift", "Baseline-Drift erhoeht");
         else add("ok", "loc.dev_ok", "Lage nahe Standortnormal");
     } else if (location_.capturing()) {
         add("info", "loc.capturing", "Standort-Baseline wird aufgenommen");

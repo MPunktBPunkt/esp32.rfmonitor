@@ -30,6 +30,7 @@ public:
     // Deviation: -100..+100, negativ = schlechter als Standortnormal.
     int8_t deviation() const { return deviation_; }
     bool stale() const;
+    float driftMagnitude() const { return driftMag_; }
     void appendJson(JsonObject target) const;
 
 private:
@@ -93,5 +94,9 @@ private:
     float minRssi_ = 0, maxRssi_ = 0;
 
     int8_t deviation_ = 0;
+    float driftMag_ = 0;
+    float zScore_ = 0;
+    float zAp_ = 0;
+    float zRssi_ = 0;
     DevParts parts_{};
 };
