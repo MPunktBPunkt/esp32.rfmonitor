@@ -1,8 +1,10 @@
 # Lab Baseline Evidence — 2026-10-25
 
+Klassifikation: **`lab-baseline`** (trotz Session-Label `feld-…` — kein zweiter Standort).
+
 | | |
 |--|--|
-| Firmware während Capture | **1.3.0** |
+| Firmware während Capture | **1.3.0** (Score v1) |
 | Dauer | 600 s |
 | Geräte | Mini `192.168.178.87`, S3 `192.168.178.88` |
 | Label Session | `feld-baseline-2026-10-25` |

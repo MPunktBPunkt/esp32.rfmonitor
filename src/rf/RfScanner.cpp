@@ -94,6 +94,13 @@ void RfScanner::loop(bool mayStart) {
     int16_t n = WiFi.scanComplete();
     if (n == WIFI_SCAN_RUNNING) {
         scanning_ = true;
+        // Async WiFi scan can hang on some ESP32 builds — don't block BLE forever.
+        if (millis() - lastScanStart_ >= 15000UL) {
+            Serial.println("[WIFI] scan timeout — force delete");
+            WiFi.scanDelete();
+            scanning_ = false;
+            noteFail();
+        }
         return;
     }
     if (scanning_ && n >= 0) {

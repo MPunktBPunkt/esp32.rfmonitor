@@ -7,8 +7,10 @@ Wertebereich: **0 … 100**. Höher = bessere lokale Funklage / eigene WLAN-Qual
 | ≤ 1.3 | v1 | `scoreVersion: 1` |
 | ≥ 1.4 | **v2** | `scoreVersion: 2`, zusätzlich `scoreV1` / `scoreV2` |
 
-Beide Formeln laufen parallel (`src/rf/RfScore.cpp`) — gleiche Features, Replay möglich.  
-Proxies ≠ Airtime. Separat: `measurementQuality`, `locationDeviation`.
+Beide Formeln laufen parallel (`src/rf/RfScore.cpp`) — gleiche Features, hardwareunabhängig.  
+Host: `pio test -e native`, `tools/test_rf_score.py`, Replay `tools/rf-score-replay`.  
+Proxies ≠ Airtime. Separat: `measurementQuality`, `locationDeviation`.  
+API: `assessment.why` / `rf.why` listet Abzüge + stärksten Penalty.
 
 ---
 

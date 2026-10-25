@@ -2,17 +2,38 @@
 
 | | |
 |--|--|
-| Version | **1.5.0** (Operator-UI + Hub-Contract v2) |
+| Version | **1.6.1** (Validation + Mini BLE hang fix) |
 | Lab | Mini `.87` + S3 `.88` |
-| Evidence | [evidence/2026-10-25-lab-baseline](evidence/2026-10-25-lab-baseline/) |
+| Evidence | [lab-baseline](evidence/2026-10-25-lab-baseline/) · [kitchen side-by-side](evidence/2026-10-25-kitchen-side-by-side/) |
 | Hub | [HUB_CONTRACT.md](HUB_CONTRACT.md) |
 
 ## Erledigt bis 1.5
 
-Observability → Location/Session → Score v2 → Operator-UI/Timeline/Filter → Hub-Contract v2
+Observability → Location/Session → Score v2 → Operator-UI → Hub-Contract v2
+
+## Erledigt in 1.6.x
+
+- Score Unit-Tests + Replay
+- Zeitbasis NTP / `timeValid`
+- Radio Duty 5 m / 1 h / Lifetime
+- Location Profile v2 (Varianz) + Deviation-Teile + Why-Score
+- Kitchen side-by-side Evidence (Fritzbox-nah)
+- **1.6.1:** BLE-Scan-Watchdog; Mini Dual-Core-Worker aus (NimBLE-Hang starvete WiFi)
 
 ## Als Nächstes
 
-- Commit / PR
-- ioBroker-Seite an Contract v2 anpassen (Schwellwerte optional hub-seitig)
-- Optional: Event Acknowledge/Pin, CSV-Export
+**P1 Operator**
+- [ ] Event State Machine + ACK/Pin
+- [ ] AP firstSeen / seenCount → NEW/PERSISTENT/FLAPPING
+- [ ] Channel History
+- [ ] Multi-resolution History
+- [ ] Baseline-Drift-Metrik
+
+**P0 / Feld**
+- [ ] Controlled Score Characterization (A–G)
+- [ ] Mini↔S3 nach 1.6.1 erneut (Duty/BLE-Hunger weg?)
+- [ ] ioBroker Hub Contract v2
+
+## Bewusst zurückgestellt
+
+OLED · starke BLE-Taxonomie · Interference-Score · 5 GHz auf Verdacht

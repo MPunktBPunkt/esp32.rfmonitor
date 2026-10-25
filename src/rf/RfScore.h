@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-// Pure score models — no WiFi/Arduino deps so they can be unit-tested later.
+// Pure score models — no WiFi/Arduino deps (native tests + tools/rf-score-replay).
 struct RfScoreFeatures {
     int8_t ownRssi = 0;
     float rssiJitter = 0;

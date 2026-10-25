@@ -44,11 +44,15 @@ public:
     void resultsToJson(JsonArray arr, bool beaconsOnly = false) const;
     void ingest(const char* addr, const char* name, int8_t rssi, uint16_t mfgId, uint8_t kind);
 
+    // Soft hang recovery: active scan window is 4s; force-finish after this.
+    static constexpr uint32_t kWindowTimeoutMs = 7000UL;
+
 private:
     int findIndex(const char* addr) const;
     bool isKnown(const char* addr, const char* name) const;
     void prune();
     void noteFail();
+    void finishWindow(bool ok);
 
     ConfigStore* cfg_ = nullptr;
     EventLog* events_ = nullptr;

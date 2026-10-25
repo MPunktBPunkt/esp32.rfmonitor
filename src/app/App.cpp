@@ -1,6 +1,7 @@
 #include "App.h"
 #include "core/HwCaps.h"
 #include "core/NetUtil.h"
+#include "core/TimeBase.h"
 #include "web/UiPages.h"
 #include <WiFi.h>
 #include <WiFiManager.h>
@@ -31,11 +32,13 @@ void App::begin() {
     Serial.printf("[BOOT] reset reason %d\n", (int)esp_reset_reason());
 
     HwCaps::begin();
+    TimeBase::begin();
     config.begin();
     events.begin();
     history.begin();
     checkResetButton();
     setupWifi();
+    TimeBase::onWifiConnected();
 
     scanner.begin(&config, &events, &history);
     ble.begin(&config, &events, &history);
@@ -139,8 +142,9 @@ void App::buildStatusJson(JsonDocument& doc) {
     doc["rssi"] = WiFi.RSSI();
     doc["ssid"] = WiFi.SSID();
     doc["channel"] = WiFi.channel();
-    doc["uptime"] = NetUtil::fmtUptime(millis() / 1000UL);
-    doc["uptimeS"] = millis() / 1000UL;
+    doc["uptime"] = NetUtil::fmtUptime(TimeBase::uptimeS());
+    doc["uptimeS"] = TimeBase::uptimeS();
+    TimeBase::appendJson(doc["time"].to<JsonObject>());
     doc["heap"] = ESP.getFreeHeap();
     doc["sketch"] = ESP.getFreeSketchSpace();
     doc["hub"] = config.hubHost + ":" + String(config.hubPort);
@@ -165,7 +169,8 @@ void App::buildHeartbeat(JsonDocument& doc) {
     doc["version"] = FW_VERSION;
     doc["ip"] = NetUtil::localIp();
     doc["rssi"] = WiFi.RSSI();
-    doc["uptime"] = millis() / 1000UL;
+    doc["uptime"] = TimeBase::uptimeS();
+    TimeBase::appendJson(doc["time"].to<JsonObject>());
     doc["freeHeap"] = ESP.getFreeHeap();
     doc["freeSketch"] = ESP.getFreeSketchSpace();
     doc["fwType"] = "rfmonitor";
@@ -492,17 +497,18 @@ void App::registerRoutes() {
 
 void App::tickScans() {
     scanner.loop(false);
-    ble.loop(false);
+    ble.loop(false);  // includes BLE window watchdog
     if (scanner.busy()) {
         ble.stop();
         return;
     }
-    if (ble.busy()) return;
+    // Prefer WiFi when due — a stuck BLE busy flag must not starve AP scans.
     if (scanner.due()) {
-        ble.stop();
+        if (ble.busy()) ble.stop();
         scanner.requestScan();
         return;
     }
+    if (ble.busy()) return;
     if (ble.due()) ble.startWindow();
 }
 
@@ -510,6 +516,7 @@ void App::loop() {
     server.handleClient();
     if (!radioOnWorker_) radioTick();
     hub.loop();
+    TimeBase::loop();
 
     unsigned long now = millis();
     if (now - lastSse_ >= 4000UL) {

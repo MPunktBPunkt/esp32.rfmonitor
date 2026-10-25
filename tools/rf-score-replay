@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""Replay RF Score v1/v2 over a session export JSON.
+
+Usage:
+  tools/rf-score-replay docs/evidence/.../mini-session.json
+  tools/rf-score-replay session.json --formula v2
+  tools/rf-score-replay session.json --csv
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import sys
+from pathlib import Path
+
+# Allow running from repo root or tools/
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from rf_score import compute_v1, compute_v2, features_from_session_sample, result_dict  # noqa: E402
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Replay RF Score formulas on session JSON")
+    ap.add_argument("session", type=Path, help="session export JSON")
+    ap.add_argument("--formula", choices=("both", "v1", "v2"), default="both")
+    ap.add_argument("--csv", action="store_true", help="CSV to stdout")
+    ap.add_argument("--limit", type=int, default=0, help="max samples (0=all)")
+    args = ap.parse_args()
+
+    data = json.loads(args.session.read_text(encoding="utf-8"))
+    samples = data.get("samples") or []
+    if args.limit > 0:
+        samples = samples[: args.limit]
+
+    rows = []
+    for i, s in enumerate(samples, 1):
+        feat = features_from_session_sample(s)
+        v1 = compute_v1(feat)
+        v2 = compute_v2(feat)
+        device = s.get("score")
+        rows.append(
+            {
+                "n": i,
+                "ts": s.get("ts"),
+                "device": device,
+                "v1": v1.score,
+                "v2": v2.score,
+                "d_v2_v1": v2.score - v1.score,
+                "d_v2_device": (v2.score - device) if device is not None else None,
+                "ownRssi": feat.own_rssi,
+                "pressure": feat.pressure_proxy,
+                "density": feat.density_proxy,
+                "quality": feat.measurement_quality,
+            }
+        )
+
+    if not rows:
+        print("no samples", file=sys.stderr)
+        return 1
+
+    if args.csv:
+        fields = list(rows[0].keys())
+        w = csv.DictWriter(sys.stdout, fieldnames=fields)
+        w.writeheader()
+        w.writerows(rows)
+        return 0
+
+    print(f"# session={args.session.name} samples={len(rows)} board={data.get('board')} fw={data.get('fwVersion')}")
+    print(f"# note: occupancy/jitter/stability often absent in older exports → reconstructed defaults")
+    print(f"{'n':>4} {'ts':>6} {'dev':>4} {'v1':>4} {'v2':>4} {'Δ21':>4} {'Δ2d':>4}  rssi dens press qual")
+    show = rows if args.formula == "both" else rows
+    for r in show:
+        d2d = r["d_v2_device"]
+        print(
+            f"{r['n']:4d} {str(r['ts']):>6} {str(r['device']):>4} {r['v1']:4d} {r['v2']:4d} "
+            f"{r['d_v2_v1']:+4d} {('' if d2d is None else f'{d2d:+d}'):>4}  "
+            f"{r['ownRssi']:4d} {r['density']:4d} {r['pressure']:5d} {r['quality']:4d}"
+        )
+
+    avg_v1 = sum(r["v1"] for r in rows) / len(rows)
+    avg_v2 = sum(r["v2"] for r in rows) / len(rows)
+    avg_dev = sum(r["device"] or 0 for r in rows) / len(rows)
+    print(f"# avg device={avg_dev:.1f}  replay_v1={avg_v1:.1f}  replay_v2={avg_v2:.1f}")
+
+    # Emit last sample breakdown for inspection
+    last = samples[-1]
+    feat = features_from_session_sample(last)
+    print("# last sample parts v2:", json.dumps(result_dict(compute_v2(feat))["parts"]))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

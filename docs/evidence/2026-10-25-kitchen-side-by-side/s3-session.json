@@ -1,0 +1,193 @@
+{
+  "active": false,
+  "label": "K\u00fcche",
+  "startS": 132,
+  "endS": 149,
+  "startEpochS": 1792945236,
+  "endEpochS": 1792945253,
+  "timeValid": true,
+  "sampleCount": 4,
+  "ringCount": 4,
+  "warnEvents": 0,
+  "errorEvents": 0,
+  "avgScore": 96,
+  "avgQuality": 100,
+  "avgDeviation": 3,
+  "minScore": 96,
+  "maxScore": 96,
+  "minQuality": 100,
+  "maxQuality": 100,
+  "scoreVersion": 2,
+  "fwVersion": "1.6.0",
+  "board": "esp32-s3",
+  "samples": [
+    {
+      "ts": 136,
+      "tsUptime": 136,
+      "tsEpoch": 1792945239,
+      "score": 96,
+      "quality": 100,
+      "deviation": 3,
+      "apCount": 3,
+      "bleCount": 3,
+      "pressure": 10,
+      "occupancy": 24,
+      "density": 12,
+      "jitter": 1,
+      "stability": 100,
+      "connected": true,
+      "ownRssi": -32,
+      "radioDuty": 24
+    },
+    {
+      "ts": 140,
+      "tsUptime": 140,
+      "tsEpoch": 1792945243,
+      "score": 96,
+      "quality": 100,
+      "deviation": 3,
+      "apCount": 3,
+      "bleCount": 3,
+      "pressure": 10,
+      "occupancy": 24,
+      "density": 12,
+      "jitter": 0,
+      "stability": 100,
+      "connected": true,
+      "ownRssi": -32,
+      "radioDuty": 24
+    },
+    {
+      "ts": 144,
+      "tsUptime": 144,
+      "tsEpoch": 1792945247,
+      "score": 96,
+      "quality": 100,
+      "deviation": 3,
+      "apCount": 3,
+      "bleCount": 4,
+      "pressure": 10,
+      "occupancy": 24,
+      "density": 12,
+      "jitter": 0,
+      "stability": 100,
+      "connected": true,
+      "ownRssi": -32,
+      "radioDuty": 27
+    },
+    {
+      "ts": 148,
+      "tsUptime": 148,
+      "tsEpoch": 1792945251,
+      "score": 96,
+      "quality": 100,
+      "deviation": 3,
+      "apCount": 3,
+      "bleCount": 4,
+      "pressure": 10,
+      "occupancy": 24,
+      "density": 12,
+      "jitter": 0,
+      "stability": 100,
+      "connected": true,
+      "ownRssi": -32,
+      "radioDuty": 27
+    }
+  ],
+  "name": "PiDrive-Lab",
+  "location": "Standort",
+  "locationProfile": {
+    "valid": true,
+    "capturing": false,
+    "captureProgressPct": 0,
+    "captureSamples": 76,
+    "captureTargetS": 300,
+    "deviation": 2,
+    "deviationVersion": 1,
+    "profileVersion": 2,
+    "stale": false,
+    "capturedAtS": 452,
+    "capturedAtUptimeS": 452,
+    "capturedAtEpochS": 1792945555,
+    "capturedTimeValid": true,
+    "sampleCount": 76,
+    "baselineAgeS": 525,
+    "baseline": {
+      "score": 93.19736,
+      "density": 15.73684,
+      "channelPressure": 19.34211,
+      "channelOccupancy": 24,
+      "apCount": 3.934211,
+      "bleCount": 4.052631,
+      "ownRssi": -31.98684,
+      "channels": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        1.934211,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    "distribution": {
+      "score": {
+        "mean": 93.19736,
+        "stddev": 0.743741,
+        "min": 93,
+        "max": 96
+      },
+      "density": {
+        "mean": 15.73684,
+        "stddev": 0.991655,
+        "min": 12,
+        "max": 16
+      },
+      "channelPressure": {
+        "mean": 19.34211,
+        "stddev": 2.479137,
+        "min": 10,
+        "max": 20
+      },
+      "channelOccupancy": {
+        "mean": 24,
+        "stddev": 0,
+        "min": 24,
+        "max": 24
+      },
+      "apCount": {
+        "mean": 3.934211,
+        "stddev": 0.247914,
+        "min": 3,
+        "max": 4
+      },
+      "bleCount": {
+        "mean": 4.052631,
+        "stddev": 0.741526,
+        "min": 2,
+        "max": 5
+      },
+      "ownRssi": {
+        "mean": -31.98684,
+        "stddev": 0.113951,
+        "min": -32,
+        "max": -31
+      }
+    },
+    "deviationParts": {
+      "score": 1.261186,
+      "density": 0.280263,
+      "pressure": 0.700658,
+      "apCount": 0.186842,
+      "bleCount": -0.094737,
+      "rssi": 0.098684
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # esp32.rfmonitor
 
-![Version](https://img.shields.io/badge/version-1.5.0-blue)
+![Version](https://img.shields.io/badge/version-1.6.1-blue)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Build](https://github.com/MPunktBPunkt/esp32.rfmonitor/actions/workflows/build.yml/badge.svg)](https://github.com/MPunktBPunkt/esp32.rfmonitor/actions/workflows/build.yml)
 [![Donate](https://img.shields.io/badge/Donate-PayPal-00457C.svg?logo=paypal)](https://www.paypal.com/donate/?business=martin%40bchmnn.de&currency_code=EUR)
@@ -22,13 +22,16 @@
 
 ---
 
-## Features v1.5
+## Features v1.6
 
 - WiFiManager-Setup (`ESP-RFMonitor-Setup`)
 - Periodischer **WLAN-/BLE-Scan** (instrumentiert)
 - **Observation Model** + **RF-Score v2** + Location/Session/Snapshot
 - **Hub-Contract v2** (`rf.alert`, scoreV1/V2, Quality, Deviation) — [docs/HUB_CONTRACT.md](docs/HUB_CONTRACT.md)
-- Operator-UI: **RF Timeline**, WLAN-Filter/Sortierung, History-Zeitfenster, Findings
+- Location Profile **v2** (mean/stddev/min/max) + Deviation-Teile; NTP/`timeValid`
+- Radio Duty **5 m / 1 h / Lifetime**; „Why this score?“ in API/UI
+- Score Unit-Tests + Replay (`tools/rf-score-replay`)
+- Operator-UI: **RF Timeline**, Findings, Why?, WLAN-Filter/Sortierung
 - Event-Hysterese; PSRAM (S3) + Dual-Core RF-Worker
 - SSE, Web-OTA, Betriebsmodi Live/Normal/Diagnose
 
@@ -60,7 +63,7 @@ pio device monitor
 
 ## Hub-IO-Werte
 
-`wifi_rssi`, `wifi_rssi_avg`, `wifi_rssi_jitter`, `rf_score`, `rf_score_version`, `measurement_quality`, `location_deviation`, `ap_count`, `ble_count`, `beacon_count`, `channel_load`, `channel_pressure_proxy`, `scan_fail_count`, `radio_duty_pct`
+`wifi_rssi`, `wifi_rssi_avg`, `wifi_rssi_jitter`, `rf_score`, `rf_score_version`, `measurement_quality`, `location_deviation`, `ap_count`, `ble_count`, `beacon_count`, `channel_load`, `channel_pressure_proxy`, `scan_fail_count`, `radio_duty_pct`, `radio_duty_5m_pct`, `radio_duty_1h_pct`
 
 Heartbeat-Feld `fwType`: `rfmonitor`
 
@@ -68,9 +71,16 @@ Heartbeat-Feld `fwType`: `rfmonitor`
 
 ## RF-Score & Observation
 
-- Score: [docs/RF_SCORE.md](docs/RF_SCORE.md) (v1, versioniert)
+- Score: [docs/RF_SCORE.md](docs/RF_SCORE.md) (v1+v2 parallel, aktiv v2)
 - Modell: [docs/OBSERVATION_MODEL.md](docs/OBSERVATION_MODEL.md)
+- Characterization: [docs/SCORE_CHARACTERIZATION.md](docs/SCORE_CHARACTERIZATION.md)
 - Stand: [docs/STATE.md](docs/STATE.md)
+
+```bash
+pio test -e native
+python3 tools/test_rf_score.py
+tools/rf-score-replay docs/evidence/2026-10-25-lab-baseline/mini-session.json
+```
 
 ---
 
