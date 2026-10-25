@@ -1,7 +1,7 @@
 # Score Characterization — 2026-10-25
 
 Orchestrated remote phase markers A–G on Mini + S3 (FW 1.9.0).
-Hold 120s per phase. Physical RF changes were operator-driven during windows.
+Hold 120s per phase. Physical RF changes were operator-driven during windows (weak stimulus: one position change + guest WLAN once — insufficient for A–E score drops).
 
 ## Run
 

@@ -40,12 +40,18 @@ void addCors(WebServer& server) {
 
 String jsonToString(const JsonDocument& doc) {
     String out;
+    const size_t n = measureJson(doc);
+    if (n) out.reserve(n + 8);
     serializeJson(doc, out);
     return out;
 }
 
 void sendJson(WebServer& server, int code, const JsonDocument& doc) {
     addCors(server);
+    // Prefer one contiguous String with reserve(): ESP32 WebServer's
+    // setContentLength + empty send + raw client write truncates mid-body
+    // on Mini under load. Phase aggregates keep exports useful even if a
+    // full sample ring transfer stalls.
     server.send(code, F("application/json"), jsonToString(doc));
 }
 
@@ -70,3 +76,4 @@ bool readJsonBody(WebServer& server, JsonDocument& doc) {
 }
 
 }
+

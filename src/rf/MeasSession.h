@@ -6,12 +6,13 @@
 #include "rf/SessionProfile.h"
 
 // Reproducible field measurement window (summary + ring of samples + phases).
+// Per-phase running aggregates survive ring wrap so A–G exports stay complete.
 class MeasSession {
 public:
 #if defined(RFMON_BOARD_S3)
-    static constexpr size_t kMaxSamples = 150;
+    static constexpr size_t kMaxSamples = 300;
 #else
-    static constexpr size_t kMaxSamples = 120;
+    static constexpr size_t kMaxSamples = 180;
 #endif
     static constexpr size_t kMaxPhases = 12;
 
@@ -62,9 +63,31 @@ private:
         uint32_t startUptimeS;
         uint32_t endUptimeS;
         bool open;
+        // Running aggregates (survive sample ring wrap).
+        uint32_t n;
+        uint32_t connectedN;
+        double sumScore;
+        double sumQuality;
+        double sumDev;
+        double sumAp;
+        double sumBle;
+        double sumPress;
+        double sumOcc;
+        double sumDens;
+        double sumJitter;
+        double sumStab;
+        double sumRssi;
+        double sumDuty;
+        uint8_t minScore;
+        uint8_t maxScore;
     };
 
     void closeOpenPhase(uint32_t sampleIdx, uint32_t uptimeS);
+    void accumulatePhase(Phase& p, uint8_t score, uint8_t quality, int8_t deviation,
+                         uint8_t apCount, uint8_t bleCount, uint8_t pressure,
+                         uint8_t occupancy, uint8_t density, float jitter, uint8_t stability,
+                         bool connected, float ownRssi, float radioDuty);
+    void appendPhaseJson(JsonObject o, const Phase& p) const;
 
     bool active_ = false;
     char label_[40] = {0};

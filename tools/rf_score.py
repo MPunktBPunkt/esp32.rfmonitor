@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
 def _clamp_u8(v: float | int) -> int:
@@ -110,6 +110,26 @@ def features_from_session_sample(s: Dict[str, Any]) -> Features:
         stability=stability,
         connected=connected,
         measurement_quality=quality,
+    )
+
+
+def features_from_phase_aggregate(ph: Dict[str, Any]) -> Optional[Features]:
+    """Rebuild Features from MeasSession per-phase running aggregates (survive ring wrap)."""
+    n = int(ph.get("n") or 0)
+    if n <= 0:
+        return None
+    connected_pct = float(ph.get("connectedPct") if ph.get("connectedPct") is not None else 100)
+    return Features(
+        own_rssi=int(round(float(ph.get("avgOwnRssi") or 0))),
+        rssi_jitter=float(ph.get("avgJitter") or 0),
+        density_proxy=int(round(float(ph.get("avgDensity") or 0))),
+        pressure_proxy=int(round(float(ph.get("avgPressure") or 0))),
+        occupancy_proxy=int(round(float(ph.get("avgOccupancy") or 0))),
+        stability=int(round(float(ph.get("avgStability") if ph.get("avgStability") is not None else 100))),
+        connected=connected_pct >= 50.0,
+        measurement_quality=int(
+            round(float(ph.get("avgQuality") if ph.get("avgQuality") is not None else 100))
+        ),
     )
 
 

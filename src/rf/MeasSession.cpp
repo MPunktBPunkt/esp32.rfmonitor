@@ -21,6 +21,56 @@ void MeasSession::closeOpenPhase(uint32_t sampleIdx, uint32_t uptimeS) {
     p.endUptimeS = uptimeS;
 }
 
+void MeasSession::accumulatePhase(Phase& p, uint8_t score, uint8_t quality, int8_t deviation,
+                                  uint8_t apCount, uint8_t bleCount, uint8_t pressure,
+                                  uint8_t occupancy, uint8_t density, float jitter, uint8_t stability,
+                                  bool connected, float ownRssi, float radioDuty) {
+    p.n++;
+    if (connected) p.connectedN++;
+    p.sumScore += score;
+    p.sumQuality += quality;
+    p.sumDev += deviation;
+    p.sumAp += apCount;
+    p.sumBle += bleCount;
+    p.sumPress += pressure;
+    p.sumOcc += occupancy;
+    p.sumDens += density;
+    p.sumJitter += jitter;
+    p.sumStab += stability;
+    p.sumRssi += ownRssi;
+    p.sumDuty += radioDuty;
+    if (score < p.minScore) p.minScore = score;
+    if (score > p.maxScore) p.maxScore = score;
+}
+
+void MeasSession::appendPhaseJson(JsonObject o, const Phase& p) const {
+    o["id"] = p.id;
+    o["note"] = p.note;
+    o["startSample"] = p.startSample;
+    o["endSample"] = p.open ? sampleCount_ : p.endSample;
+    o["startUptimeS"] = p.startUptimeS;
+    o["endUptimeS"] = p.open ? TimeBase::uptimeS() : p.endUptimeS;
+    o["open"] = p.open;
+    o["n"] = p.n;
+    if (p.n == 0) return;
+    float n = (float)p.n;
+    o["avgScore"] = p.sumScore / n;
+    o["avgQuality"] = p.sumQuality / n;
+    o["avgDeviation"] = p.sumDev / n;
+    o["avgApCount"] = p.sumAp / n;
+    o["avgBleCount"] = p.sumBle / n;
+    o["avgPressure"] = p.sumPress / n;
+    o["avgOccupancy"] = p.sumOcc / n;
+    o["avgDensity"] = p.sumDens / n;
+    o["avgJitter"] = p.sumJitter / n;
+    o["avgStability"] = p.sumStab / n;
+    o["avgOwnRssi"] = p.sumRssi / n;
+    o["avgRadioDuty"] = p.sumDuty / n;
+    o["connectedPct"] = (p.connectedN * 100.0f) / n;
+    o["minScore"] = p.minScore;
+    o["maxScore"] = p.maxScore;
+}
+
 bool MeasSession::start(const char* label, const SessionProfileDef* profile, uint16_t durationOverrideS) {
     active_ = true;
     startS_ = TimeBase::uptimeS();
@@ -86,6 +136,8 @@ bool MeasSession::markPhase(const char* id, const char* note) {
     p.startSample = sampleCount_;
     p.startUptimeS = now;
     p.open = true;
+    p.minScore = 100;
+    p.maxScore = 0;
     strncpy(currentPhaseId_, p.id, sizeof(currentPhaseId_) - 1);
     return true;
 }
@@ -116,6 +168,14 @@ void MeasSession::noteSample(uint8_t score, uint8_t quality, int8_t deviation,
     if (quality > maxQuality_) maxQuality_ = quality;
     if (eventLevel == 1) warnEvents_++;
     if (eventLevel == 0) errorEvents_++;
+
+    if (phaseCount_ > 0) {
+        Phase& ph = phases_[phaseCount_ - 1];
+        if (ph.open) {
+            accumulatePhase(ph, score, quality, deviation, apCount, bleCount, pressure,
+                            occupancy, density, jitter, stability, connected, ownRssi, radioDuty);
+        }
+    }
 
     Sample& s = ring_[head_];
     s.tsUptime = TimeBase::uptimeS();
@@ -193,14 +253,7 @@ void MeasSession::appendExportJson(JsonObject target) const {
 
     JsonArray ph = target["phases"].to<JsonArray>();
     for (uint8_t i = 0; i < phaseCount_; i++) {
-        JsonObject o = ph.add<JsonObject>();
-        o["id"] = phases_[i].id;
-        o["note"] = phases_[i].note;
-        o["startSample"] = phases_[i].startSample;
-        o["endSample"] = phases_[i].open ? sampleCount_ : phases_[i].endSample;
-        o["startUptimeS"] = phases_[i].startUptimeS;
-        o["endUptimeS"] = phases_[i].open ? TimeBase::uptimeS() : phases_[i].endUptimeS;
-        o["open"] = phases_[i].open;
+        appendPhaseJson(ph.add<JsonObject>(), phases_[i]);
     }
 
     JsonArray arr = target["samples"].to<JsonArray>();

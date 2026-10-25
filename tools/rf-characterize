@@ -18,7 +18,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from rf_score import Features, compute_v1, compute_v2, features_from_session_sample  # noqa: E402
+from rf_score import (  # noqa: E402
+    Features,
+    compute_v1,
+    compute_v2,
+    features_from_phase_aggregate,
+    features_from_session_sample,
+)
 
 
 @dataclass
@@ -168,53 +174,73 @@ def _avg_feat(samples: List[Dict[str, Any]]) -> Optional[Features]:
     )
 
 
+def _feat_for_phase(
+    ph_meta: Optional[Dict[str, Any]], samples: List[Dict[str, Any]]
+) -> Tuple[Optional[Features], str, float, int]:
+    """Return (features, source, device_avg_score, n). Prefer live phase aggregates."""
+    if ph_meta and int(ph_meta.get("n") or 0) > 0:
+        feat = features_from_phase_aggregate(ph_meta)
+        if feat is not None:
+            avg = float(ph_meta.get("avgScore") or 0)
+            return feat, "agg", avg, int(ph_meta["n"])
+    if samples:
+        feat = _avg_feat(samples)
+        if feat is not None:
+            scores = [int(s.get("score") or 0) for s in samples]
+            return feat, "ring", sum(scores) / len(scores), len(samples)
+    return None, "", 0.0, 0
+
+
 def run_session(path: Path, verbose: bool = True) -> int:
     data = json.loads(path.read_text(encoding="utf-8"))
     samples = data.get("samples") or []
     phases = data.get("phases") or []
     if verbose:
-        print(f"# session={path.name} profile={data.get('profile')} phases={len(phases)} samples={len(samples)}")
+        print(
+            f"# session={path.name} profile={data.get('profile')} "
+            f"phases={len(phases)} samples={len(samples)} "
+            f"ringCap={data.get('ringCapacity')}"
+        )
 
-    # Prefer phase field on samples; fall back to phase index ranges.
-    by_phase: Dict[str, List[Dict[str, Any]]] = {}
+    by_phase_samples: Dict[str, List[Dict[str, Any]]] = {}
     for s in samples:
         pid = s.get("phase") or ""
         if pid:
-            by_phase.setdefault(pid, []).append(s)
-    if not by_phase and phases:
-        # Reconstruct from start/end sample indices against chronological ring order.
-        # sampleCount may exceed ring — use ring order as approx.
-        for ph in phases:
-            pid = ph.get("id") or ""
-            start = int(ph.get("startSample") or 0)
-            end = int(ph.get("endSample") or len(samples))
-            # Map absolute sample indices onto ring window if possible — best effort:
-            # take all samples already tagged, else slice ring proportionally.
-            by_phase[pid] = samples  # weak fallback; operator should use markPhase
+            by_phase_samples.setdefault(pid, []).append(s)
 
-    if not by_phase:
+    by_phase_meta: Dict[str, Dict[str, Any]] = {}
+    for ph in phases:
+        pid = ph.get("id") or ""
+        if pid:
+            by_phase_meta[pid] = ph
+
+    if not by_phase_meta and not by_phase_samples:
         print("# no phase markers in session — run SIM instead or mark phases on device", file=sys.stderr)
         return 2
 
-    # Baseline = phase G if present else unlabeled early samples / phase-less
-    base_samples = by_phase.get("G") or []
-    if not base_samples:
-        base_samples = [s for s in samples if not s.get("phase")][: max(3, len(samples) // 10)]
-    base_feat = _avg_feat(base_samples) or base_lab()
+    base_feat, base_src, _, base_n = _feat_for_phase(
+        by_phase_meta.get("G"), by_phase_samples.get("G") or []
+    )
+    if base_feat is None:
+        early = [s for s in samples if not s.get("phase")][: max(3, len(samples) // 10)]
+        base_feat = _avg_feat(early) or base_lab()
+        base_src, base_n = "fallback", 0
     b2 = compute_v2(base_feat)
+    if verbose:
+        print(f"# baseline G via {base_src} n={base_n} v2={b2.score}")
 
     failed = 0
+    checked = 0
     for ex in EXPERIMENTS:
-        if ex.id not in by_phase:
+        feat, src, avg_dev, n = _feat_for_phase(
+            by_phase_meta.get(ex.id), by_phase_samples.get(ex.id) or []
+        )
+        if feat is None or n == 0:
             if verbose:
                 print(f"{ex.id}  SKIP (no samples)")
             continue
-        feat = _avg_feat(by_phase[ex.id])
-        if not feat:
-            continue
+        checked += 1
         r2 = compute_v2(feat)
-        device_scores = [int(s.get("score") or 0) for s in by_phase[ex.id]]
-        avg_dev = sum(device_scores) / len(device_scores)
 
         if ex.id in ("F", "G"):
             ok = r2.score >= b2.score - 2
@@ -225,10 +251,12 @@ def run_session(path: Path, verbose: bool = True) -> int:
         if verbose:
             print(
                 f"{ex.id}  replay_v2={r2.score} base={b2.score} device_avg={avg_dev:.1f} "
-                f"n={len(by_phase[ex.id])} {'OK' if ok else 'FAIL'}  ({ex.note})"
+                f"n={n} via={src} {'OK' if ok else 'FAIL'}  ({ex.note})"
             )
     if verbose:
-        print(f"# result: {'PASS' if failed == 0 else 'FAIL'} ({failed} failed)")
+        print(f"# result: {'PASS' if failed == 0 and checked else 'FAIL'} ({failed} failed, {checked} checked)")
+    if checked == 0:
+        return 2
     return 0 if failed == 0 else 1
 
 

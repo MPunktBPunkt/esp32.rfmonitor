@@ -18,14 +18,23 @@ Validiert A–G gegen `tools/rf_score.py` (gleiche Formeln wie Firmware). CI fü
    - oder `POST /api/session/start` `{"profile":"characterization","label":"char-YYYY-MM-DD-mini"}`
 3. Pro Experiment Phase setzen (UI-Buttons A–G oder API):
    - `POST /api/session/phase` `{"id":"A","note":"RSSI -20dB"}`
-4. Änderung ≥2 min halten, optional Snapshot `GET /api/rf/snapshot`.
-5. Session stoppen → `GET /api/session/export` speichern.
-6. Auswerten:
+4. **Klare physische Änderung** halten (empfohlen **45–60 s**, nicht 2 min — sonst Ring-Druck ohne Mehrwert):
+   - A: Gerät deutlich wegdrehen / Abstand (Ziel ≈ −15…−20 dB RSSI)
+   - B: ≥3–5 zusätzliche APs/Hotspots sichtbar
+   - C: mehrere APs bewusst auf denselben Kanal
+   - D: APs auf zusätzliche Kanäle verteilen
+   - E: WLAN wirklich trennen (≥20 s), dann reconnect
+   - F/G: ruhig nahe Baseline-Lage
+5. Optional Snapshot `GET /api/rf/snapshot`.
+6. Session stoppen → `GET /api/session/export` speichern.
+7. Auswerten:
 
 ```bash
 tools/rf-characterize session docs/evidence/.../mini-session.json
 tools/rf-score-replay docs/evidence/.../mini-session.json
 ```
+
+Schwache Stimulus (nur Position tippen / Gast-WLAN einmal an) reicht typischerweise **nicht** — Score bleibt flach → FAIL ist erwartbar.
 
 ### Experimenttabelle
 
@@ -46,7 +55,10 @@ tools/rf-score-replay docs/evidence/.../mini-session.json
 | WiFi-Scan | 10 s |
 | BLE-Scan | 8 s |
 | Dauer | manuell (Phasen) |
-| Ring | 120 (Mini) / 150 (S3) Samples |
+| Ring | 180 (Mini) / 300 (S3) Samples |
+| Phase-Aggregates | live (`n`, `avgScore`, `avgOwnRssi`, …) — überleben Ring-Wrap |
+
+`tools/rf-characterize session` bevorzugt Phase-Aggregates; Ring-Samples sind Zusatz.
 
 Weitere Profile: `field` (10 min, 20/15), `quick` (3 min), `diagnose`.
 
@@ -57,8 +69,11 @@ docs/evidence/YYYY-MM-DD-score-characterization/
   README.md
   mini-session.json
   s3-session.json
-  snapshots/A.json … G.json
+  *-characterize.txt
+  snapshots/…
 ```
+
+Feld 2026-10-25: erster Lauf mit schwachem Stimulus + Ring-Wrap → FAIL (dokumentiert). Ab 1.9.1 Aggregates + größerer Ring.
 
 ## Exit-Kriterium
 

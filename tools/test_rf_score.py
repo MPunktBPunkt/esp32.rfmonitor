@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from rf_score import Features, compute_v1, compute_v2
+from rf_score import Features, compute_v1, compute_v2, features_from_phase_aggregate
 
 
 def base() -> Features:
@@ -65,6 +65,26 @@ class TestRfScore(unittest.TestCase):
         v1, v2 = compute_v1(f), compute_v2(f)
         self.assertLessEqual(v2.parts.density, v1.parts.density)
         self.assertLessEqual(v2.parts.pressure, v1.parts.pressure)
+
+    def test_phase_aggregate_features(self):
+        ph = {
+            "n": 12,
+            "avgOwnRssi": -68,
+            "avgJitter": 3.5,
+            "avgDensity": 40,
+            "avgPressure": 50,
+            "avgOccupancy": 60,
+            "avgStability": 90,
+            "avgQuality": 95,
+            "connectedPct": 100,
+            "avgScore": 70,
+        }
+        feat = features_from_phase_aggregate(ph)
+        assert feat is not None
+        self.assertEqual(feat.own_rssi, -68)
+        self.assertEqual(feat.density_proxy, 40)
+        self.assertTrue(feat.connected)
+        self.assertIsNone(features_from_phase_aggregate({"n": 0}))
 
 
 if __name__ == "__main__":
