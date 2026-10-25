@@ -32,6 +32,15 @@ public:
     uint8_t deviceCount() const { return count_; }
     uint8_t beaconCount() const { return beaconCount_; }
     uint8_t newCount() const { return newCount_; }
+    uint16_t failCount() const { return failCount_; }
+    uint16_t attemptCount() const { return attemptCount_; }
+    uint16_t successCount() const { return successCount_; }
+    uint32_t lastScanDurationMs() const { return lastDurationMs_; }
+    uint32_t totalBusyMs() const { return totalBusyMs_; }
+    uint32_t lastScanTs() const { return lastScanTs_; }
+    uint32_t scanAgeS() const;
+    float failRatePct() const;
+    size_t capacity() const { return capacity_; }
     void resultsToJson(JsonArray arr, bool beaconsOnly = false) const;
     void ingest(const char* addr, const char* name, int8_t rssi, uint16_t mfgId, uint8_t kind);
 
@@ -39,11 +48,13 @@ private:
     int findIndex(const char* addr) const;
     bool isKnown(const char* addr, const char* name) const;
     void prune();
+    void noteFail();
 
     ConfigStore* cfg_ = nullptr;
     EventLog* events_ = nullptr;
     HistoryStore* history_ = nullptr;
-    BleRecord devices_[RFMON_MAX_BLE];
+    BleRecord* devices_ = nullptr;
+    size_t capacity_ = RFMON_MAX_BLE;
     uint8_t count_ = 0;
     uint8_t beaconCount_ = 0;
     uint8_t newCount_ = 0;
@@ -52,6 +63,12 @@ private:
     unsigned long windowStart_ = 0;
     unsigned long lastStart_ = 0;
     unsigned long lastPrune_ = 0;
+    uint32_t lastDurationMs_ = 0;
+    uint32_t totalBusyMs_ = 0;
+    uint32_t lastScanTs_ = 0;
+    uint16_t failCount_ = 0;
+    uint16_t attemptCount_ = 0;
+    uint16_t successCount_ = 0;
     char pendingAddr_[8][18];
     uint8_t pendingKind_[8];
     uint8_t pendingCount_ = 0;

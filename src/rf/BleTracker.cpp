@@ -1,4 +1,5 @@
 #include "BleTracker.h"
+#include "core/HwCaps.h"
 #include <string.h>
 #include <ArduinoJson.h>
 #include "freertos/FreeRTOS.h"
@@ -40,7 +41,10 @@ void BleTracker::begin(ConfigStore* cfg, EventLog* events, HistoryStore* history
     cfg_ = cfg;
     events_ = events;
     history_ = history;
-    memset(devices_, 0, sizeof(devices_));
+    capacity_ = HwCaps::maxBle();
+    if (capacity_ < 8) capacity_ = 8;
+    devices_ = (BleRecord*)HwCaps::alloc(capacity_ * sizeof(BleRecord), true);
+    if (devices_) memset(devices_, 0, capacity_ * sizeof(BleRecord));
     lastStart_ = millis();
 #if RFMON_ENABLE_BLE
     g_ble = this;
@@ -77,6 +81,7 @@ bool BleTracker::isKnown(const char* addr, const char* name) const {
 }
 
 int BleTracker::findIndex(const char* addr) const {
+    if (!devices_) return -1;
     for (uint8_t i = 0; i < count_; i++) {
         if (strcasecmp(devices_[i].addr, addr) == 0) return i;
     }
@@ -84,13 +89,13 @@ int BleTracker::findIndex(const char* addr) const {
 }
 
 void BleTracker::ingest(const char* addr, const char* name, int8_t rssi, uint16_t mfgId, uint8_t kind) {
-    if (!addr || !addr[0]) return;
+    if (!addr || !addr[0] || !devices_ || capacity_ == 0) return;
     uint32_t now = millis() / 1000UL;
     bool known = isKnown(addr, name);
     portENTER_CRITICAL(&mux_);
     int idx = findIndex(addr);
     if (idx < 0) {
-        if (count_ >= RFMON_MAX_BLE) {
+        if (count_ >= capacity_) {
             uint8_t oldest = 0;
             uint32_t oldestTs = devices_[0].lastSeen;
             for (uint8_t i = 1; i < count_; i++) {
@@ -127,6 +132,7 @@ void BleTracker::ingest(const char* addr, const char* name, int8_t rssi, uint16_
 }
 
 void BleTracker::prune() {
+    if (!devices_) return;
     uint32_t now = millis() / 1000UL;
     uint8_t w = 0;
     beaconCount_ = 0;
@@ -142,15 +148,27 @@ void BleTracker::prune() {
     count_ = w;
 }
 
+void BleTracker::noteFail() {
+    failCount_++;
+    if (events_) {
+        events_->warn("ble.scan_error", "BLE-Scan fehlgeschlagen", "");
+        events_->warn("measurement.scan_failed", "BLE-Scan fehlgeschlagen", "ble");
+    }
+}
+
 bool BleTracker::startWindow() {
 #if RFMON_ENABLE_BLE
     if (!ready_ || !cfg_ || !cfg_->bleEnabled) return false;
     if (scanning_) return false;
     NimBLEScan* scan = NimBLEDevice::getScan();
     if (scan->isScanning()) return false;
+    attemptCount_++;
     newCount_ = 0;
     uint32_t dur = 4;
-    if (!scan->start(dur, nullptr, false)) return false;
+    if (!scan->start(dur, nullptr, false)) {
+        noteFail();
+        return false;
+    }
     scanning_ = true;
     windowStart_ = millis();
     lastStart_ = millis();
@@ -166,6 +184,11 @@ void BleTracker::stop() {
     NimBLEScan* scan = NimBLEDevice::getScan();
     if (scan->isScanning()) scan->stop();
 #endif
+    if (scanning_) {
+        uint32_t dur = millis() - windowStart_;
+        lastDurationMs_ = dur;
+        totalBusyMs_ += dur;
+    }
     scanning_ = false;
 }
 
@@ -174,6 +197,17 @@ bool BleTracker::due() const {
     unsigned long interval = (unsigned long)cfg_->bleScanIntervalS * 1000UL;
     if (interval < 5000UL) interval = 5000UL;
     return !scanning_ && (millis() - lastStart_ >= interval);
+}
+
+uint32_t BleTracker::scanAgeS() const {
+    if (lastScanTs_ == 0) return 0xFFFFFFFFu;
+    uint32_t now = millis() / 1000UL;
+    return now >= lastScanTs_ ? now - lastScanTs_ : 0;
+}
+
+float BleTracker::failRatePct() const {
+    if (attemptCount_ == 0) return 0;
+    return 100.0f * (float)failCount_ / (float)attemptCount_;
 }
 
 void BleTracker::loop(bool mayStart) {
@@ -198,6 +232,11 @@ void BleTracker::loop(bool mayStart) {
     }
     NimBLEScan* scan = NimBLEDevice::getScan();
     if (scanning_ && !scan->isScanning()) {
+        uint32_t dur = millis() - windowStart_;
+        lastDurationMs_ = dur;
+        totalBusyMs_ += dur;
+        lastScanTs_ = millis() / 1000UL;
+        successCount_++;
         scanning_ = false;
         prune();
         if (history_) history_->push(HistoryStore::BLE_COUNT, (float)count_);
@@ -211,6 +250,7 @@ void BleTracker::loop(bool mayStart) {
 }
 
 void BleTracker::resultsToJson(JsonArray arr, bool beaconsOnly) const {
+    if (!devices_) return;
     for (uint8_t i = 0; i < count_; i++) {
         if (beaconsOnly && devices_[i].kind == 0) continue;
         JsonObject o = arr.add<JsonObject>();

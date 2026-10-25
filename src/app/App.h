@@ -3,6 +3,8 @@
 #include <ArduinoJson.h>
 #include <WebServer.h>
 #include <WiFiClient.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "core/ConfigStore.h"
 #include "core/EventLog.h"
 #include "core/HistoryStore.h"
@@ -26,6 +28,7 @@ public:
 
     void begin();
     void loop();
+    void radioTick();
     void buildStatusJson(JsonDocument& doc);
     void buildHeartbeat(JsonDocument& doc);
     String statusString();
@@ -43,11 +46,14 @@ private:
     void handleEvents();
     void sseSend(const String& data);
     void tickScans();
+    void startRadioWorker();
 
     WiFiClient sseClient_;
+    TaskHandle_t radioTask_ = nullptr;
     unsigned long lastSse_ = 0;
     unsigned long lastWifiCheck_ = 0;
     unsigned long lastHubNote_ = 0;
     bool restartPending_ = false;
     unsigned long restartAt_ = 0;
+    bool radioOnWorker_ = false;
 };

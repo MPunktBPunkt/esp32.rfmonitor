@@ -1,7 +1,7 @@
 #pragma once
 
 #ifndef FW_VERSION
-#define FW_VERSION "1.1.0"
+#define FW_VERSION "1.5.0"
 #endif
 
 #ifndef DEVICE_NAME_DEFAULT
@@ -32,6 +32,17 @@
 #define RESET_HOLD_SEC 3
 #endif
 
+// Active assessment score version (v1 still computed for comparison / replay).
+#ifndef RFMON_SCORE_VERSION
+#define RFMON_SCORE_VERSION 2
+#endif
+
+// Dual-core RF worker (scan/analyze). Disable with -DRFMON_USE_DUAL_CORE=0.
+#ifndef RFMON_USE_DUAL_CORE
+#define RFMON_USE_DUAL_CORE 1
+#endif
+
+// Internal-RAM defaults (Mini D1 and S3 without usable PSRAM).
 #ifndef RFMON_HISTORY_SIZE
 #if defined(CONFIG_IDF_TARGET_ESP32S3)
 #define RFMON_HISTORY_SIZE 180
@@ -62,6 +73,20 @@
 #else
 #define RFMON_MAX_BLE 24
 #endif
+#endif
+
+// PSRAM-backed capacities (S3 with BOARD_HAS_PSRAM + psramFound()).
+#ifndef RFMON_HISTORY_SIZE_PSRAM
+#define RFMON_HISTORY_SIZE_PSRAM 720
+#endif
+#ifndef RFMON_EVENT_SIZE_PSRAM
+#define RFMON_EVENT_SIZE_PSRAM 128
+#endif
+#ifndef RFMON_MAX_APS_PSRAM
+#define RFMON_MAX_APS_PSRAM 96
+#endif
+#ifndef RFMON_MAX_BLE_PSRAM
+#define RFMON_MAX_BLE_PSRAM 96
 #endif
 
 #ifndef RFMON_ENABLE_BLE

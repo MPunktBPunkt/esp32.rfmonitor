@@ -1,11 +1,15 @@
 #pragma once
 
 #include <WiFi.h>
+#include "BuildFlags.h"
 #include "core/ConfigStore.h"
 #include "core/EventLog.h"
 #include "core/HistoryStore.h"
 #include "rf/RfScanner.h"
 #include "rf/BleTracker.h"
+#include "rf/LocationProfile.h"
+#include "rf/MeasSession.h"
+#include "rf/RfScore.h"
 
 class RfAnalyzer {
 public:
@@ -14,6 +18,11 @@ public:
     void noteHub(bool ok);
 
     uint8_t score() const { return score_; }
+    uint8_t scoreV1() const { return scoreV1_; }
+    uint8_t scoreV2() const { return scoreV2_; }
+    uint8_t scoreVersion() const { return RFMON_SCORE_VERSION; }
+    uint8_t measurementQuality() const { return quality_; }
+    int8_t locationDeviation() const { return location_.deviation(); }
     float rssiAvg() const { return rssiAvg_; }
     float rssiJitter() const { return rssiJitter_; }
     int8_t rssiMin() const { return rssiMin_; }
@@ -23,26 +32,60 @@ public:
     uint8_t density() const { return density_; }
     uint8_t stability() const { return stability_; }
     uint16_t disconnects() const { return disconnects_; }
+    float radioDutyPct() const { return radioDutyPct_; }
+    LocationProfile& location() { return location_; }
+    const LocationProfile& location() const { return location_; }
+    MeasSession& session() { return session_; }
+    const MeasSession& session() const { return session_; }
+
     void appendStatusJson(JsonObject target) const;
+    void appendObservationJson(JsonObject target) const;
+    void appendSnapshotJson(JsonObject target) const;
+    void appendFindingsJson(JsonArray arr) const;
+    void appendAlertState(JsonObject target) const;
+    void appendHubContract(JsonObject target) const;
     void appendIoValues(JsonObject ios) const;
+    bool anyAlert() const;
 
 private:
+    struct Hyst {
+        bool active = false;
+        unsigned long enterSince = 0;
+        unsigned long clearSince = 0;
+        unsigned long lastEmit = 0;
+    };
     void recompute();
+    void recomputeQuality();
+    void updateAlerts();
+    bool tickHyst(Hyst& h, bool enterCond, bool exitCond, unsigned long enterMs, unsigned long exitMs,
+                  unsigned long cooldownMs, const char* enterType, const char* enterTitle,
+                  const char* exitType, const char* exitTitle, const char* detail);
+    static void putProxy(JsonObject parent, const char* key, uint8_t value, const char* basis);
+    static void putParts(JsonObject parts, const RfScoreBreakdown& b);
 
     ConfigStore* cfg_ = nullptr;
     EventLog* events_ = nullptr;
     HistoryStore* history_ = nullptr;
     RfScanner* scanner_ = nullptr;
     BleTracker* ble_ = nullptr;
+    LocationProfile location_;
+    MeasSession session_;
     uint8_t score_ = 0;
+    uint8_t scoreV1_ = 0;
+    uint8_t scoreV2_ = 0;
+    uint8_t quality_ = 0;
     float rssiAvg_ = 0;
     float rssiJitter_ = 0;
+    float radioDutyPct_ = 0;
     int8_t rssiMin_ = 0;
     int8_t rssiMax_ = 0;
     uint8_t congestion_ = 0;
     uint8_t channelLoad_ = 0;
     uint8_t density_ = 0;
     uint8_t stability_ = 100;
+    RfScoreBreakdown partsV1_{};
+    RfScoreBreakdown partsV2_{};
+    // Legacy flat penalty fields (mirror active score parts for old UI).
     uint8_t penRssi_ = 0;
     uint8_t penJitter_ = 0;
     uint8_t penCongestion_ = 0;
@@ -57,4 +100,9 @@ private:
     wl_status_t lastWifi_ = WL_IDLE_STATUS;
     int8_t lastRssi_ = 0;
     bool hubWasOk_ = true;
+    Hyst hystScore_;
+    Hyst hystPressure_;
+    Hyst hystQuality_;
+    Hyst hystDuty_;
+    Hyst hystDeviation_;
 };

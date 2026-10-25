@@ -1,6 +1,6 @@
 # esp32.rfmonitor
 
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.5.0-blue)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Build](https://github.com/MPunktBPunkt/esp32.rfmonitor/actions/workflows/build.yml/badge.svg)](https://github.com/MPunktBPunkt/esp32.rfmonitor/actions/workflows/build.yml)
 [![Donate](https://img.shields.io/badge/Donate-PayPal-00457C.svg?logo=paypal)](https://www.paypal.com/donate/?business=martin%40bchmnn.de&currency_code=EUR)
@@ -22,28 +22,26 @@
 
 ---
 
-## Features v1.1
+## Features v1.5
 
 - WiFiManager-Setup (`ESP-RFMonitor-Setup`)
-- Periodischer **WLAN-Scan** (SSID, BSSID, RSSI, Kanal, Auth, bekannt/unbekannt)
-- Periodischer **BLE-Scan** (NimBLE) inkl. generischer Beacon-Erkennung (iBeacon / Eddystone)
-- **RF-Score 0–100** aus RSSI, Jitter, Kanalüberlastung, AP-Dichte, Stabilität inkl. **Score-Breakdown**
-- Ringbuffer-History: RSSI, RF-Score, AP-Count, BLE-Count
-- Ereignislog (`wifi.new_ap`, `ble.new_device`, `rf.score_low`, …)
-- Lab-Web-UI: Gauge, Kanal-Heatmap, Charts, Event-Terminal, SSE, Config (ohne Setup-Wizard)
-- ESP-Hub Heartbeat inkl. RF-Metriken, Web-OTA und Hub-OTA
-- Betriebsmodi: Live, Normal, Diagnose
+- Periodischer **WLAN-/BLE-Scan** (instrumentiert)
+- **Observation Model** + **RF-Score v2** + Location/Session/Snapshot
+- **Hub-Contract v2** (`rf.alert`, scoreV1/V2, Quality, Deviation) — [docs/HUB_CONTRACT.md](docs/HUB_CONTRACT.md)
+- Operator-UI: **RF Timeline**, WLAN-Filter/Sortierung, History-Zeitfenster, Findings
+- Event-Hysterese; PSRAM (S3) + Dual-Core RF-Worker
+- SSE, Web-OTA, Betriebsmodi Live/Normal/Diagnose
 
 ---
 
 ## Hardware
 
-| Board | PlatformIO-Env |
-|-------|----------------|
-| ESP32 Mini D1 | `rfmonitor-mini` |
-| ESP32-S3 | `rfmonitor-s3` |
+| Board | PlatformIO-Env | Hinweis |
+|-------|----------------|---------|
+| ESP32 Mini D1 | `rfmonitor-mini` | 2 Cores, kein PSRAM → kleine Caps |
+| ESP32-S3 | `rfmonitor-s3` | PSRAM wenn vorhanden → große Caps |
 
-WLAN- und BLE-Scans laufen **nacheinander** (gemeinsames Radio).
+Details: [docs/HARDWARE.md](docs/HARDWARE.md). WLAN- und BLE-Scans laufen **nacheinander** (gemeinsames Radio).
 
 ---
 
@@ -62,21 +60,17 @@ pio device monitor
 
 ## Hub-IO-Werte
 
-`wifi_rssi`, `wifi_rssi_avg`, `wifi_rssi_jitter`, `rf_score`, `ap_count`, `ble_count`, `beacon_count`, `channel_load`, `scan_fail_count`
+`wifi_rssi`, `wifi_rssi_avg`, `wifi_rssi_jitter`, `rf_score`, `rf_score_version`, `measurement_quality`, `location_deviation`, `ap_count`, `ble_count`, `beacon_count`, `channel_load`, `channel_pressure_proxy`, `scan_fail_count`, `radio_duty_pct`
 
 Heartbeat-Feld `fwType`: `rfmonitor`
 
 ---
 
-## RF-Score
+## RF-Score & Observation
 
-Dokumentiert in [docs/RF_SCORE.md](docs/RF_SCORE.md). Heuristik v1:
-
-- Start 100
-- Abzug bei eigenem RSSI unter −55 dBm
-- Abzug bei RSSI-Jitter über 8 dB
-- Abzug durch Kanalbelegung und AP-Dichte
-- Abzug bei Reconnects / fehlender WLAN-Verbindung
+- Score: [docs/RF_SCORE.md](docs/RF_SCORE.md) (v1, versioniert)
+- Modell: [docs/OBSERVATION_MODEL.md](docs/OBSERVATION_MODEL.md)
+- Stand: [docs/STATE.md](docs/STATE.md)
 
 ---
 
@@ -84,12 +78,13 @@ Dokumentiert in [docs/RF_SCORE.md](docs/RF_SCORE.md). Heuristik v1:
 
 | Endpoint | Funktion |
 |----------|----------|
-| `/api/status` | Gesamtstatus |
-| `/api/rf/status` `/api/rf/score` `/api/rf/history` | RF |
-| `/api/wifi/list` `/api/wifi/channels` `/api/wifi/scan` | WLAN |
-| `/api/ble/list` `/api/ble/beacons` `/api/ble/scan` | BLE |
-| `/api/history/rssi` … `/blecount` | Zeitreihen |
-| `/api/events/recent` `/api/events/clear` | Events |
+| `/api/status` | Gesamtstatus inkl. `hw` + Observation |
+| `/api/rf/status` `/observations` `/snapshot` `/history` | RF |
+| `/api/location/get` `/capture` `/clear` | Standort-Baseline |
+| `/api/session/start` `/stop` `/export` | Mess-Session |
+| `/api/wifi/list` `/channels` `/scan` | WLAN |
+| `/api/ble/list` `/beacons` `/scan` | BLE |
+| `/api/system/hw` | Cores / PSRAM / Caps |
 | `/api/config/get` `/save` `/test` | Config |
 | `/events` | SSE |
 | `/ota` `/ota-upload` | Web-OTA |
