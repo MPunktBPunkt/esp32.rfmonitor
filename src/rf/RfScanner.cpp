@@ -1,4 +1,5 @@
 #include "RfScanner.h"
+#include "core/HwCaps.h"
 #include <WiFi.h>
 #include <string.h>
 #include <ArduinoJson.h>
@@ -7,8 +8,12 @@ void RfScanner::begin(ConfigStore* cfg, EventLog* events, HistoryStore* history)
     cfg_ = cfg;
     events_ = events;
     history_ = history;
-    memset(aps_, 0, sizeof(aps_));
-    memset(prevBssid_, 0, sizeof(prevBssid_));
+    capacity_ = HwCaps::maxAps();
+    if (capacity_ < 8) capacity_ = 8;
+    aps_ = (ApRecord*)HwCaps::alloc(capacity_ * sizeof(ApRecord), true);
+    prevBssid_ = (char (*)[18])HwCaps::alloc(capacity_ * 18, true);
+    if (aps_) memset(aps_, 0, capacity_ * sizeof(ApRecord));
+    if (prevBssid_) memset(prevBssid_, 0, capacity_ * 18);
     lastScanStart_ = millis() - (unsigned long)cfg_->wifiScanIntervalS * 1000UL + 3000UL;
 }
 
@@ -40,24 +45,49 @@ bool RfScanner::isKnownSsid(const String& ssid) const {
     return false;
 }
 
+void RfScanner::noteFail() {
+    failCount_++;
+    lastScanOk_ = false;
+    if (events_) {
+        events_->warn("wifi.scan_error", "WLAN-Scan fehlgeschlagen", "");
+        events_->warn("measurement.scan_failed", "WLAN-Scan fehlgeschlagen", "wifi");
+    }
+}
+
 bool RfScanner::requestScan() {
     if (scanning_) return false;
     if (WiFi.scanComplete() == WIFI_SCAN_RUNNING) return false;
+    attemptCount_++;
     int16_t rc = WiFi.scanNetworks(true, true);
     scanning_ = (rc == WIFI_SCAN_RUNNING || rc >= 0);
     if (scanning_) lastScanStart_ = millis();
     if (rc == WIFI_SCAN_FAILED) {
-        failCount_++;
-        if (events_) events_->warn("wifi.scan_error", "WLAN-Scan fehlgeschlagen", "");
+        noteFail();
         return false;
     }
-    return scanning_;
+    if (rc >= 0) {
+        processScan(rc);
+        WiFi.scanDelete();
+        scanning_ = false;
+    }
+    return scanning_ || lastScanOk_;
 }
 
 bool RfScanner::due() const {
     unsigned long interval = (unsigned long)(cfg_ ? cfg_->wifiScanIntervalS : 20) * 1000UL;
     if (interval < 8000UL) interval = 8000UL;
     return !scanning_ && (millis() - lastScanStart_ >= interval);
+}
+
+uint32_t RfScanner::scanAgeS() const {
+    if (lastScanTs_ == 0) return 0xFFFFFFFFu;
+    uint32_t now = millis() / 1000UL;
+    return now >= lastScanTs_ ? now - lastScanTs_ : 0;
+}
+
+float RfScanner::failRatePct() const {
+    if (attemptCount_ == 0) return 0;
+    return 100.0f * (float)failCount_ / (float)attemptCount_;
 }
 
 void RfScanner::loop(bool mayStart) {
@@ -74,14 +104,13 @@ void RfScanner::loop(bool mayStart) {
     }
     if (n == WIFI_SCAN_FAILED && scanning_) {
         scanning_ = false;
-        failCount_++;
-        if (events_) events_->warn("wifi.scan_error", "WLAN-Scan fehlgeschlagen", "");
+        noteFail();
     }
     if (mayStart && due()) requestScan();
 }
 
 void RfScanner::emitDiff() {
-    if (!events_) return;
+    if (!events_ || !aps_ || !prevBssid_) return;
     for (uint8_t i = 0; i < apCount_; i++) {
         bool found = false;
         for (uint8_t p = 0; p < prevCount_; p++) {
@@ -110,11 +139,18 @@ void RfScanner::emitDiff() {
 }
 
 void RfScanner::processScan(int16_t n) {
+    if (!aps_ || !prevBssid_) return;
+    uint32_t dur = millis() - lastScanStart_;
+    lastDurationMs_ = dur;
+    totalBusyMs_ += dur;
+    successCount_++;
+    lastScanOk_ = true;
+
     apCount_ = 0;
     knownCount_ = 0;
     strongest_ = -127;
     float sum = 0;
-    int16_t limit = n > RFMON_MAX_APS ? RFMON_MAX_APS : n;
+    int16_t limit = n > (int16_t)capacity_ ? (int16_t)capacity_ : n;
     for (int16_t i = 0; i < limit; i++) {
         ApRecord& ap = aps_[apCount_];
         String ssid = WiFi.SSID(i);
@@ -147,13 +183,34 @@ void RfScanner::processScan(int16_t n) {
 
 void RfScanner::channelOccupancy(uint8_t out[14]) const {
     memset(out, 0, 14);
+    if (!aps_) return;
     for (uint8_t i = 0; i < apCount_; i++) {
         uint8_t ch = aps_[i].channel;
         if (ch >= 1 && ch <= 14) out[ch - 1]++;
     }
 }
 
+void RfScanner::channelStats(uint8_t ch, uint8_t& count, int8_t& maxRssi, int8_t& avgRssi,
+                             uint8_t& known, uint8_t& unknown) const {
+    count = 0;
+    known = 0;
+    unknown = 0;
+    maxRssi = -127;
+    int32_t sum = 0;
+    if (!aps_) { avgRssi = 0; return; }
+    for (uint8_t i = 0; i < apCount_; i++) {
+        if (aps_[i].channel != ch) continue;
+        count++;
+        if (aps_[i].rssi > maxRssi) maxRssi = aps_[i].rssi;
+        sum += aps_[i].rssi;
+        if (aps_[i].known) known++;
+        else unknown++;
+    }
+    avgRssi = count ? (int8_t)(sum / count) : 0;
+}
+
 void RfScanner::resultsToJson(JsonArray arr) const {
+    if (!aps_) return;
     for (uint8_t i = 0; i < apCount_; i++) {
         JsonObject o = arr.add<JsonObject>();
         o["ssid"] = aps_[i].ssid;
@@ -168,11 +225,21 @@ void RfScanner::resultsToJson(JsonArray arr) const {
 }
 
 void RfScanner::channelsToJson(JsonArray arr) const {
-    uint8_t ch[14];
-    channelOccupancy(ch);
     for (uint8_t i = 0; i < 14; i++) {
+        uint8_t count = 0, known = 0, unknown = 0;
+        int8_t maxRssi = -127, avgRssi = 0;
+        channelStats(i + 1, count, maxRssi, avgRssi, known, unknown);
         JsonObject o = arr.add<JsonObject>();
         o["ch"] = i + 1;
-        o["count"] = ch[i];
+        o["count"] = count;
+        o["maxRssi"] = count ? maxRssi : 0;
+        o["avgRssi"] = count ? avgRssi : 0;
+        o["known"] = known;
+        o["unknown"] = unknown;
+        const char* pressure = "none";
+        if (count >= 8) pressure = "high";
+        else if (count >= 4) pressure = "medium";
+        else if (count > 0) pressure = "low";
+        o["pressure"] = pressure;
     }
 }

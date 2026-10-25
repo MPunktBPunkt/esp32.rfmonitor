@@ -1,5 +1,7 @@
 #include "RfAnalyzer.h"
 #include "core/HistoryStore.h"
+#include "core/HwCaps.h"
+#include "BuildFlags.h"
 #include <math.h>
 #include <ArduinoJson.h>
 
@@ -9,6 +11,8 @@ void RfAnalyzer::begin(ConfigStore* cfg, EventLog* events, HistoryStore* history
     history_ = history;
     scanner_ = scanner;
     ble_ = ble;
+    location_.begin(cfg);
+    session_.begin();
     lastWifi_ = WiFi.status();
     lastRssi_ = (int8_t)WiFi.RSSI();
 }
@@ -19,7 +23,7 @@ void RfAnalyzer::loop() {
         disconnects_++;
         if (stability_ > 8) stability_ -= 8;
         if (events_) events_->warn("system.reconnect", "WLAN-Verbindung verloren", "");
-        if (events_) events_->warn("wifi.rssi_drop", "Eigene WLAN-Verbindung kritisch", "");
+        if (events_) events_->warn("wifi.own_ap_lost", "Eigene WLAN-Verbindung kritisch", "");
     }
     if (lastWifi_ != WL_CONNECTED && st == WL_CONNECTED && events_) {
         events_->info("system.reconnect", "WLAN wieder verbunden", WiFi.SSID().c_str());
@@ -40,6 +44,127 @@ void RfAnalyzer::noteHub(bool ok) {
         events_->warn("system.hub_offline", "ESP-Hub nicht erreichbar", "");
     }
     hubWasOk_ = ok;
+}
+
+void RfAnalyzer::putProxy(JsonObject parent, const char* key, uint8_t value, const char* basis) {
+    JsonObject o = parent[key].to<JsonObject>();
+    o["value"] = value;
+    o["kind"] = "proxy";
+    o["basis"] = basis;
+}
+
+void RfAnalyzer::putParts(JsonObject parts, const RfScoreBreakdown& b) {
+    parts["ownLink"] = b.ownLink;
+    parts["rssi"] = b.ownLink;
+    parts["jitter"] = b.jitter;
+    parts["density"] = b.density;
+    parts["pressure"] = b.pressure;
+    parts["congestion"] = b.pressure;
+    parts["occupancy"] = b.occupancy;
+    parts["stability"] = b.stability;
+    parts["disconnect"] = b.disconnect;
+    parts["qualityGate"] = b.qualityGate;
+}
+
+void RfAnalyzer::recomputeQuality() {
+    int q = 100;
+    uint32_t wifiInterval = cfg_ ? (uint32_t)cfg_->wifiScanIntervalS : 20;
+    if (wifiInterval < 8) wifiInterval = 8;
+
+    if (!scanner_ || scanner_->successCount() == 0) {
+        q -= 40;
+    } else {
+        uint32_t age = scanner_->scanAgeS();
+        if (age != 0xFFFFFFFFu && age > wifiInterval * 2) q -= 20;
+        q -= (int)(scanner_->failRatePct() * 0.4f);
+    }
+
+    if (cfg_ && cfg_->bleEnabled && ble_ && ble_->ready()) {
+        q -= (int)(ble_->failRatePct() * 0.3f);
+    }
+
+    if (rssiCount_ < 6) q -= 15;
+    if (radioDutyPct_ > 40.0f) q -= 10;
+    if (q < 0) q = 0;
+    if (q > 100) q = 100;
+    quality_ = (uint8_t)q;
+}
+
+bool RfAnalyzer::tickHyst(Hyst& h, bool enterCond, bool exitCond,
+                          unsigned long enterMs, unsigned long exitMs, unsigned long cooldownMs,
+                          const char* enterType, const char* enterTitle,
+                          const char* exitType, const char* exitTitle, const char* detail) {
+    unsigned long now = millis();
+    if (!h.active) {
+        if (enterCond) {
+            if (h.enterSince == 0) h.enterSince = now;
+            if (now - h.enterSince >= enterMs && (h.lastEmit == 0 || now - h.lastEmit >= cooldownMs)) {
+                h.active = true;
+                h.clearSince = 0;
+                h.lastEmit = now;
+                if (events_) events_->warn(enterType, enterTitle, detail);
+                return true;
+            }
+        } else {
+            h.enterSince = 0;
+        }
+    } else {
+        if (exitCond) {
+            if (h.clearSince == 0) h.clearSince = now;
+            if (now - h.clearSince >= exitMs) {
+                h.active = false;
+                h.enterSince = 0;
+                h.clearSince = 0;
+                h.lastEmit = now;
+                if (events_) events_->info(exitType, exitTitle, detail);
+                return true;
+            }
+        } else {
+            h.clearSince = 0;
+        }
+    }
+    return false;
+}
+
+void RfAnalyzer::updateAlerts() {
+    uint8_t warnScore = cfg_ ? cfg_->rfScoreWarn : 40;
+    uint8_t exitScore = warnScore + 8;
+    if (exitScore > 100) exitScore = 100;
+    char detail[16];
+
+    snprintf(detail, sizeof(detail), "%u", (unsigned)score_);
+    tickHyst(hystScore_, score_ < warnScore, score_ > exitScore,
+             30000UL, 60000UL, 120000UL,
+             "rf.score_low", "RF-Score schlecht",
+             "rf.score_recover", "RF-Score erholt", detail);
+
+    uint8_t congWarn = cfg_ ? cfg_->congestionWarn : 70;
+    uint8_t congExit = congWarn > 10 ? (uint8_t)(congWarn - 10) : 0;
+    snprintf(detail, sizeof(detail), "%u", (unsigned)congestion_);
+    tickHyst(hystPressure_, congestion_ >= congWarn, congestion_ < congExit,
+             30000UL, 60000UL, 120000UL,
+             "rf.channel_pressure_high", "Kanaldruck-Proxy hoch",
+             "rf.channel_pressure_recover", "Kanaldruck-Proxy normal", detail);
+
+    snprintf(detail, sizeof(detail), "%u", (unsigned)quality_);
+    tickHyst(hystQuality_, quality_ < 50, quality_ > 60,
+             30000UL, 60000UL, 120000UL,
+             "measurement.data_quality_low", "Messqualitaet niedrig",
+             "measurement.data_quality_recover", "Messqualitaet ok", detail);
+
+    snprintf(detail, sizeof(detail), "%.0f", radioDutyPct_);
+    tickHyst(hystDuty_, radioDutyPct_ > 45.0f, radioDutyPct_ < 35.0f,
+             45000UL, 90000UL, 180000UL,
+             "measurement.radio_budget_high", "Radio-Zeitbudget hoch",
+             "measurement.radio_budget_ok", "Radio-Zeitbudget ok", detail);
+
+    if (location_.valid()) {
+        snprintf(detail, sizeof(detail), "%d", (int)location_.deviation());
+        tickHyst(hystDeviation_, location_.deviation() <= -25, location_.deviation() >= -10,
+                 45000UL, 90000UL, 180000UL,
+                 "rf.baseline_deviation", "Abweichung vom Standortnormal",
+                 "rf.baseline_recover", "Lage nahe Standortnormal", detail);
+    }
 }
 
 void RfAnalyzer::recompute() {
@@ -79,23 +204,64 @@ void RfAnalyzer::recompute() {
     channelLoad_ = occupied >= 13 ? 100 : (uint8_t)(occupied * 8);
     density_ = aps >= 20 ? 80 : (uint8_t)(aps * 4);
 
-    penRssi_ = rssi < -55 ? (uint8_t)((-55 - rssi) * 1.2f) : 0;
-    penJitter_ = rssiJitter_ > 8 ? (uint8_t)((rssiJitter_ - 8) * 2) : 0;
-    penCongestion_ = congestion_ / 4;
-    penDensity_ = density_ / 6;
-    penStability_ = (100 - stability_) / 3;
-    penDisconnect_ = WiFi.status() != WL_CONNECTED ? 25 : 0;
-    int score = 100 - (int)penRssi_ - (int)penJitter_ - (int)penCongestion_
-                - (int)penDensity_ - (int)penStability_ - (int)penDisconnect_;
-    if (score < 0) score = 0;
-    if (score > 100) score = 100;
+    uint32_t upMs = millis();
+    if (upMs < 1000UL) upMs = 1000UL;
+    uint32_t busy = 0;
+    if (scanner_) busy += scanner_->totalBusyMs();
+    if (ble_) busy += ble_->totalBusyMs();
+    radioDutyPct_ = 100.0f * (float)busy / (float)upMs;
+    if (radioDutyPct_ > 100.0f) radioDutyPct_ = 100.0f;
+
+    recomputeQuality();
+
+    RfScoreFeatures feat;
+    feat.ownRssi = rssi;
+    feat.rssiJitter = rssiJitter_;
+    feat.densityProxy = density_;
+    feat.pressureProxy = congestion_;
+    feat.occupancyProxy = channelLoad_;
+    feat.stability = stability_;
+    feat.connected = WiFi.status() == WL_CONNECTED;
+    feat.measurementQuality = quality_;
+
+    RfScoreResult v1 = RfScore::computeV1(feat);
+    RfScoreResult v2 = RfScore::computeV2(feat);
+    scoreV1_ = v1.score;
+    scoreV2_ = v2.score;
+    partsV1_ = v1.parts;
+    partsV2_ = v2.parts;
+
     uint8_t prev = score_;
-    score_ = (uint8_t)score;
+#if RFMON_SCORE_VERSION >= 2
+    score_ = scoreV2_;
+    penRssi_ = partsV2_.ownLink;
+    penJitter_ = partsV2_.jitter;
+    penCongestion_ = partsV2_.pressure;
+    penDensity_ = partsV2_.density;
+    penStability_ = partsV2_.stability;
+    penDisconnect_ = partsV2_.disconnect;
+#else
+    score_ = scoreV1_;
+    penRssi_ = partsV1_.ownLink;
+    penJitter_ = partsV1_.jitter;
+    penCongestion_ = partsV1_.pressure;
+    penDensity_ = partsV1_.density;
+    penStability_ = partsV1_.stability;
+    penDisconnect_ = partsV1_.disconnect;
+#endif
+
+    uint8_t bleN = ble_ ? ble_->deviceCount() : 0;
+    location_.loop(score_, density_, congestion_, channelLoad_, aps, bleN, (float)rssi, ch);
+    updateAlerts();
 
     if (history_) {
         history_->push(HistoryStore::RSSI, (float)rssi);
         history_->push(HistoryStore::RF_SCORE, (float)score_);
+        history_->push(HistoryStore::DATA_QUALITY, (float)quality_);
     }
+
+    session_.noteSample(score_, quality_, location_.deviation(), aps, bleN, congestion_,
+                        (float)rssi, radioDutyPct_, 2);
 
     int drop = cfg_ ? cfg_->rssiWarnDrop : 12;
     if (lastRssi_ != 0 && rssi <= lastRssi_ - drop && events_) {
@@ -106,18 +272,195 @@ void RfAnalyzer::recompute() {
     }
     lastRssi_ = rssi;
 
-    uint8_t warnScore = cfg_ ? cfg_->rfScoreWarn : 40;
-    if (prev >= warnScore && score_ < warnScore && events_) {
-        events_->warn("rf.score_low", "RF-Score schlecht", String(score_).c_str());
+    if (prev >= 60 && score_ + 15 < prev && events_) {
+        events_->warn("rf.score_drop", "RF-Score stark gefallen", String(score_).c_str());
     }
-    uint8_t congWarn = cfg_ ? cfg_->congestionWarn : 70;
-    if (congestion_ >= congWarn && events_ && millis() / 4000UL % 8 == 0) {
-        events_->warn("rf.congestion_high", "Kanalueberlastung", String(congestion_).c_str());
+}
+
+bool RfAnalyzer::anyAlert() const {
+    return hystScore_.active || hystPressure_.active || hystQuality_.active
+           || hystDuty_.active || hystDeviation_.active
+           || WiFi.status() != WL_CONNECTED;
+}
+
+void RfAnalyzer::appendAlertState(JsonObject target) const {
+    target["contract"] = "rfmonitor-hub-v2";
+    target["any"] = anyAlert();
+    JsonObject flags = target["flags"].to<JsonObject>();
+    flags["score_low"] = hystScore_.active;
+    flags["channel_pressure_high"] = hystPressure_.active;
+    flags["data_quality_low"] = hystQuality_.active;
+    flags["radio_budget_high"] = hystDuty_.active;
+    flags["baseline_deviation"] = hystDeviation_.active;
+    flags["wifi_disconnected"] = WiFi.status() != WL_CONNECTED;
+}
+
+void RfAnalyzer::appendHubContract(JsonObject target) const {
+    target["contract"] = "rfmonitor-hub-v2";
+    target["fwType"] = "rfmonitor";
+    target["score"] = score_;
+    target["scoreVersion"] = RFMON_SCORE_VERSION;
+    target["scoreV1"] = scoreV1_;
+    target["scoreV2"] = scoreV2_;
+    target["measurementQuality"] = quality_;
+    target["locationDeviation"] = location_.deviation();
+    target["channelPressure"] = congestion_;
+    target["apCount"] = scanner_ ? scanner_->apCount() : 0;
+    target["bleCount"] = ble_ ? ble_->deviceCount() : 0;
+    target["radioDutyPct"] = radioDutyPct_;
+    target["wifiRssi"] = WiFi.RSSI();
+    target["locationValid"] = location_.valid();
+    appendAlertState(target["alert"].to<JsonObject>());
+}
+
+void RfAnalyzer::appendFindingsJson(JsonArray arr) const {
+    auto add = [&](const char* level, const char* code, const char* text) {
+        JsonObject o = arr.add<JsonObject>();
+        o["level"] = level;
+        o["code"] = code;
+        o["text"] = text;
+    };
+    if (WiFi.status() == WL_CONNECTED) add("ok", "wifi.own_ok", "Eigenes WLAN verbunden");
+    else add("bad", "wifi.own_lost", "Eigenes WLAN getrennt");
+
+    if (rssiMin_ <= -75) add("warn", "wifi.rssi_weak", "Eigene Verbindung schwach");
+    else add("ok", "wifi.rssi_ok", "Eigenes RSSI im Rahmen");
+
+    if (congestion_ >= 70) add("warn", "rf.pressure_high", "Kanaldruck-Proxy hoch");
+    else add("ok", "rf.pressure_ok", "Kanaldruck-Proxy normal");
+
+    if (quality_ < 50) add("warn", "meas.quality_low", "Messqualitaet niedrig");
+    else add("ok", "meas.quality_ok", "Messqualitaet ok");
+
+    if (location_.valid()) {
+        if (location_.deviation() <= -25) add("warn", "loc.dev_high", "Lage weicht vom Standortnormal ab");
+        else add("ok", "loc.dev_ok", "Lage nahe Standortnormal");
+    } else if (location_.capturing()) {
+        add("info", "loc.capturing", "Standort-Baseline wird aufgenommen");
+    } else {
+        add("info", "loc.missing", "Keine Standort-Baseline");
     }
+
+    if (scanner_ && scanner_->unknownCount() > 0) {
+        char buf[48];
+        snprintf(buf, sizeof(buf), "%u unbekannte APs", (unsigned)scanner_->unknownCount());
+        add("info", "wifi.unknown_aps", buf);
+    }
+    if (ble_ && ble_->newCount() > 0) {
+        char buf[48];
+        snprintf(buf, sizeof(buf), "%u neue BLE-Geraete im Fenster", (unsigned)ble_->newCount());
+        add("info", "ble.new", buf);
+    }
+}
+
+void RfAnalyzer::appendObservationJson(JsonObject target) const {
+    JsonObject obs = target["observation"].to<JsonObject>();
+    JsonObject wifi = obs["wifi"].to<JsonObject>();
+    wifi["ownRssi"] = WiFi.RSSI();
+    wifi["connected"] = WiFi.status() == WL_CONNECTED;
+    if (scanner_) {
+        wifi["apCount"] = scanner_->apCount();
+        wifi["knownApCount"] = scanner_->knownCount();
+        wifi["unknownApCount"] = scanner_->unknownCount();
+        wifi["strongestRssi"] = scanner_->strongestRssi();
+        wifi["scanDurationMs"] = scanner_->lastScanDurationMs();
+        wifi["scanAgeS"] = scanner_->scanAgeS() == 0xFFFFFFFFu ? -1 : (int)scanner_->scanAgeS();
+        wifi["scanOk"] = scanner_->lastScanOk();
+        wifi["scanAttempts"] = scanner_->attemptCount();
+        wifi["scanFailures"] = scanner_->failCount();
+        wifi["scanSuccesses"] = scanner_->successCount();
+        wifi["failRatePct"] = scanner_->failRatePct();
+        wifi["capacity"] = (uint32_t)scanner_->capacity();
+    }
+    JsonObject bleo = obs["ble"].to<JsonObject>();
+    if (ble_) {
+        bleo["deviceCount"] = ble_->deviceCount();
+        bleo["beaconCount"] = ble_->beaconCount();
+        bleo["newCount"] = ble_->newCount();
+        bleo["scanDurationMs"] = ble_->lastScanDurationMs();
+        bleo["scanAgeS"] = ble_->scanAgeS() == 0xFFFFFFFFu ? -1 : (int)ble_->scanAgeS();
+        bleo["scanAttempts"] = ble_->attemptCount();
+        bleo["scanFailures"] = ble_->failCount();
+        bleo["scanSuccesses"] = ble_->successCount();
+        bleo["failRatePct"] = ble_->failRatePct();
+        bleo["ready"] = ble_->ready();
+        bleo["capacity"] = (uint32_t)ble_->capacity();
+    }
+    JsonObject radio = obs["radio"].to<JsonObject>();
+    radio["wifiBusyMs"] = scanner_ ? scanner_->totalBusyMs() : 0;
+    radio["bleBusyMs"] = ble_ ? ble_->totalBusyMs() : 0;
+    radio["dutyCyclePct"] = radioDutyPct_;
+    radio["wifiScanning"] = scanner_ ? scanner_->busy() : false;
+    radio["bleScanning"] = ble_ ? ble_->busy() : false;
+    JsonObject link = obs["link"].to<JsonObject>();
+    link["rssiSampleCount"] = rssiCount_;
+    link["rssiAvg"] = rssiAvg_;
+    link["rssiJitter"] = rssiJitter_;
+    link["rssiMin"] = rssiMin_;
+    link["rssiMax"] = rssiMax_;
+    link["disconnects"] = disconnects_;
+    link["stability"] = stability_;
+    link["connected"] = WiFi.status() == WL_CONNECTED;
+
+    JsonObject derived = target["derived"].to<JsonObject>();
+    putProxy(derived, "density", density_, "ap_count");
+    putProxy(derived, "channelPressure", congestion_, "max_aps_per_channel");
+    putProxy(derived, "channelOccupancy", channelLoad_, "occupied_2g_channels");
+
+    JsonObject assess = target["assessment"].to<JsonObject>();
+    assess["score"] = score_;
+    assess["scoreVersion"] = RFMON_SCORE_VERSION;
+    assess["scoreV1"] = scoreV1_;
+    assess["scoreV2"] = scoreV2_;
+    assess["measurementQuality"] = quality_;
+    assess["locationDeviation"] = location_.deviation();
+    putParts(assess["scoreParts"].to<JsonObject>(), RFMON_SCORE_VERSION >= 2 ? partsV2_ : partsV1_);
+    putParts(assess["scorePartsV1"].to<JsonObject>(), partsV1_);
+    putParts(assess["scorePartsV2"].to<JsonObject>(), partsV2_);
+
+    location_.appendJson(target["location"].to<JsonObject>());
+    session_.appendStatusJson(target["session"].to<JsonObject>());
+    appendFindingsJson(target["findings"].to<JsonArray>());
+    appendAlertState(target["alert"].to<JsonObject>());
+}
+
+void RfAnalyzer::appendSnapshotJson(JsonObject target) const {
+    target["kind"] = "coexistence_snapshot";
+    target["fwVersion"] = FW_VERSION;
+    target["scoreVersion"] = RFMON_SCORE_VERSION;
+    target["board"] = RFMON_BOARD_ID;
+    target["location"] = cfg_ ? cfg_->locationName : "";
+    target["timestampS"] = millis() / 1000UL;
+    target["rfScore"] = score_;
+    target["scoreV1"] = scoreV1_;
+    target["scoreV2"] = scoreV2_;
+    target["measurementQuality"] = quality_;
+    target["locationDeviation"] = location_.deviation();
+    target["channelPressure"] = congestion_;
+    target["channelOccupancy"] = channelLoad_;
+    target["density"] = density_;
+    target["radioDutyPct"] = radioDutyPct_;
+    JsonObject wifi = target["wifi"].to<JsonObject>();
+    wifi["apCount"] = scanner_ ? scanner_->apCount() : 0;
+    wifi["knownApCount"] = scanner_ ? scanner_->knownCount() : 0;
+    wifi["ownRssi"] = WiFi.RSSI();
+    wifi["ssid"] = WiFi.SSID();
+    wifi["channel"] = WiFi.channel();
+    if (scanner_) scanner_->channelsToJson(wifi["channels"].to<JsonArray>());
+    JsonObject bleo = target["ble"].to<JsonObject>();
+    bleo["deviceCount"] = ble_ ? ble_->deviceCount() : 0;
+    bleo["beaconCount"] = ble_ ? ble_->beaconCount() : 0;
+    HwCaps::appendJson(target["hw"].to<JsonObject>());
+    location_.appendJson(target["locationProfile"].to<JsonObject>());
 }
 
 void RfAnalyzer::appendStatusJson(JsonObject target) const {
     target["rfScore"] = score_;
+    target["scoreVersion"] = RFMON_SCORE_VERSION;
+    target["scoreV1"] = scoreV1_;
+    target["scoreV2"] = scoreV2_;
+    target["measurementQuality"] = quality_;
+    target["locationDeviation"] = location_.deviation();
     target["wifiRssi"] = WiFi.RSSI();
     target["wifiRssiAvg"] = rssiAvg_;
     target["wifiRssiMin"] = rssiMin_;
@@ -125,28 +468,30 @@ void RfAnalyzer::appendStatusJson(JsonObject target) const {
     target["wifiRssiJitter"] = rssiJitter_;
     target["channelLoad"] = channelLoad_;
     target["channelCongestion"] = congestion_;
+    target["channelPressureProxy"] = congestion_;
+    target["channelOccupancyProxy"] = channelLoad_;
     target["apDensity"] = density_;
     target["stability"] = stability_;
     target["disconnects"] = disconnects_;
-    JsonObject parts = target["scoreParts"].to<JsonObject>();
-    parts["rssi"] = penRssi_;
-    parts["jitter"] = penJitter_;
-    parts["congestion"] = penCongestion_;
-    parts["density"] = penDensity_;
-    parts["stability"] = penStability_;
-    parts["disconnect"] = penDisconnect_;
+    target["radioDutyPct"] = radioDutyPct_;
+    putParts(target["scoreParts"].to<JsonObject>(), RFMON_SCORE_VERSION >= 2 ? partsV2_ : partsV1_);
     if (scanner_) {
         target["apCount"] = scanner_->apCount();
         target["knownApCount"] = scanner_->knownCount();
         target["unknownApCount"] = scanner_->unknownCount();
         target["strongestRssi"] = scanner_->strongestRssi();
         target["scanFailCount"] = scanner_->failCount();
+        target["wifiScanDurationMs"] = scanner_->lastScanDurationMs();
+        target["wifiScanFailRate"] = scanner_->failRatePct();
     }
     if (ble_) {
         target["bleCount"] = ble_->deviceCount();
         target["beaconCount"] = ble_->beaconCount();
         target["newBleCount"] = ble_->newCount();
+        target["bleScanDurationMs"] = ble_->lastScanDurationMs();
+        target["bleScanFailRate"] = ble_->failRatePct();
     }
+    appendObservationJson(target);
 }
 
 void RfAnalyzer::appendIoValues(JsonObject ios) const {
@@ -160,9 +505,20 @@ void RfAnalyzer::appendIoValues(JsonObject ios) const {
     add("wifi_rssi_avg", rssiAvg_, "dBm");
     add("wifi_rssi_jitter", rssiJitter_, "dB");
     add("rf_score", (float)score_, "");
+    add("rf_score_v1", (float)scoreV1_, "");
+    add("rf_score_v2", (float)scoreV2_, "");
+    add("rf_score_version", (float)RFMON_SCORE_VERSION, "");
+    add("measurement_quality", (float)quality_, "");
+    add("location_deviation", (float)location_.deviation(), "");
     add("ap_count", scanner_ ? (float)scanner_->apCount() : 0, "");
     add("ble_count", ble_ ? (float)ble_->deviceCount() : 0, "");
     add("beacon_count", ble_ ? (float)ble_->beaconCount() : 0, "");
     add("channel_load", (float)channelLoad_, "");
+    add("channel_pressure_proxy", (float)congestion_, "");
     add("scan_fail_count", scanner_ ? (float)scanner_->failCount() : 0, "");
+    add("radio_duty_pct", radioDutyPct_, "%");
+    add("alert_any", anyAlert() ? 1.0f : 0.0f, "");
+    add("alert_score_low", hystScore_.active ? 1.0f : 0.0f, "");
+    add("alert_pressure_high", hystPressure_.active ? 1.0f : 0.0f, "");
+    add("alert_quality_low", hystQuality_.active ? 1.0f : 0.0f, "");
 }

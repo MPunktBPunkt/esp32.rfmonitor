@@ -114,6 +114,9 @@ void ConfigStore::factoryReset() {
     prefs.begin("rfmon", false);
     prefs.clear();
     prefs.end();
+    prefs.begin("rfmon_loc", false);
+    prefs.clear();
+    prefs.end();
     applyDefaults();
 }
 

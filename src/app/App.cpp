@@ -1,4 +1,5 @@
 #include "App.h"
+#include "core/HwCaps.h"
 #include "core/NetUtil.h"
 #include "web/UiPages.h"
 #include <WiFi.h>
@@ -8,6 +9,14 @@
 #include <esp_system.h>
 
 static App* g_app = nullptr;
+
+static void radioWorkerTask(void* arg) {
+    App* app = static_cast<App*>(arg);
+    for (;;) {
+        app->radioTick();
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+}
 
 App& App::instance() {
     static App app;
@@ -21,6 +30,7 @@ void App::begin() {
     Serial.printf("\n=== esp32.rfmonitor v%s (%s) ===\n", FW_VERSION, RFMON_BOARD_LABEL);
     Serial.printf("[BOOT] reset reason %d\n", (int)esp_reset_reason());
 
+    HwCaps::begin();
     config.begin();
     events.begin();
     history.begin();
@@ -39,8 +49,32 @@ void App::begin() {
     setupWeb();
     hub.begin(&config);
     hub.setPayloadBuilder([](JsonDocument& doc) { App::instance().buildHeartbeat(doc); });
+    startRadioWorker();
     events.info("system.boot", "RF Monitor gestartet", FW_VERSION);
     if (config.enableHub) hub.sendNow();
+}
+
+void App::startRadioWorker() {
+    radioOnWorker_ = false;
+    if (!HwCaps::dualCore()) {
+        Serial.println("[HW] RF worker: loop-core (single/disabled)");
+        return;
+    }
+    // Pin RF scan/analyze to core 0; Arduino loop (Web/Hub) stays on core 1.
+    BaseType_t ok = xTaskCreatePinnedToCore(
+        radioWorkerTask, "rfwork", 8192, this, 1, &radioTask_, 0);
+    if (ok == pdPASS) {
+        radioOnWorker_ = true;
+        HwCaps::setWorkerRunning(true);
+        Serial.println("[HW] RF worker on core 0");
+    } else {
+        Serial.println("[HW] RF worker create failed — fallback loop-core");
+    }
+}
+
+void App::radioTick() {
+    tickScans();
+    analyzer.loop();
 }
 
 void App::checkResetButton() {
@@ -117,6 +151,7 @@ void App::buildStatusJson(JsonDocument& doc) {
     doc["firstRunDone"] = config.firstRunDone;
     doc["opMode"] = config.opMode;
     doc["bleEnabled"] = config.bleEnabled;
+    HwCaps::appendJson(doc["hw"].to<JsonObject>());
     analyzer.appendStatusJson(doc["rf"].to<JsonObject>());
     JsonObject ios = doc["ios"].to<JsonObject>();
     analyzer.appendIoValues(ios);
@@ -135,6 +170,8 @@ void App::buildHeartbeat(JsonDocument& doc) {
     doc["freeSketch"] = ESP.getFreeSketchSpace();
     doc["fwType"] = "rfmonitor";
     doc["board"] = RFMON_BOARD_ID;
+    doc["location"] = config.locationName;
+    analyzer.appendHubContract(doc["rf"].to<JsonObject>());
     JsonObject ios = doc["ios"].to<JsonObject>();
     analyzer.appendIoValues(ios);
 }
@@ -220,9 +257,96 @@ void App::registerRoutes() {
         doc["scanningBle"] = ble.busy();
         NetUtil::sendJson(server, 200, doc);
     });
+    server.on("/api/rf/observations", HTTP_GET, [this]() {
+        JsonDocument doc;
+        analyzer.appendObservationJson(doc.to<JsonObject>());
+        HwCaps::appendJson(doc["hw"].to<JsonObject>());
+        NetUtil::sendJson(server, 200, doc);
+    });
+    server.on("/api/rf/snapshot", HTTP_GET, [this]() {
+        JsonDocument doc;
+        analyzer.appendSnapshotJson(doc.to<JsonObject>());
+        doc["name"] = config.deviceName;
+        NetUtil::sendJson(server, 200, doc);
+    });
     server.on("/api/rf/score", HTTP_GET, [this]() {
         JsonDocument doc;
         analyzer.appendStatusJson(doc.to<JsonObject>());
+        NetUtil::sendJson(server, 200, doc);
+    });
+
+    server.on("/api/location/get", HTTP_GET, [this]() {
+        JsonDocument doc;
+        analyzer.location().appendJson(doc.to<JsonObject>());
+        doc["locationName"] = config.locationName;
+        NetUtil::sendJson(server, 200, doc);
+    });
+    server.on("/api/location/capture", HTTP_POST, [this]() {
+        uint16_t dur = 300;
+        String raw = server.arg("plain");
+        if (raw.length()) {
+            JsonDocument body;
+            if (!deserializeJson(body, raw) && !body["durationS"].isNull()) {
+                dur = body["durationS"].as<uint16_t>();
+            }
+        }
+        JsonDocument resp;
+        resp["ok"] = analyzer.location().startCapture(dur);
+        resp["durationS"] = analyzer.location().captureTargetS();
+        events.info("location.capture_start", "Standort-Baseline Aufnahme", String(dur).c_str());
+        NetUtil::sendJson(server, 200, resp);
+    });
+    server.on("/api/location/capture/stop", HTTP_POST, [this]() {
+        JsonDocument resp;
+        resp["ok"] = analyzer.location().saveNowFromAverages();
+        resp["valid"] = analyzer.location().valid();
+        if (resp["ok"]) events.info("location.capture_done", "Standort-Baseline gespeichert", "");
+        NetUtil::sendJson(server, 200, resp);
+    });
+    server.on("/api/location/capture/cancel", HTTP_POST, [this]() {
+        analyzer.location().cancelCapture();
+        JsonDocument resp;
+        resp["ok"] = true;
+        NetUtil::sendJson(server, 200, resp);
+    });
+    server.on("/api/location/clear", HTTP_POST, [this]() {
+        analyzer.location().clear();
+        events.info("location.cleared", "Standort-Baseline geloescht", "");
+        JsonDocument resp;
+        resp["ok"] = true;
+        NetUtil::sendJson(server, 200, resp);
+    });
+
+    server.on("/api/session/status", HTTP_GET, [this]() {
+        JsonDocument doc;
+        analyzer.session().appendStatusJson(doc.to<JsonObject>());
+        NetUtil::sendJson(server, 200, doc);
+    });
+    server.on("/api/session/start", HTTP_POST, [this]() {
+        String label;
+        String raw = server.arg("plain");
+        if (raw.length()) {
+            JsonDocument body;
+            if (!deserializeJson(body, raw)) label = body["label"] | "";
+        }
+        JsonDocument resp;
+        resp["ok"] = analyzer.session().start(label.c_str());
+        events.info("session.start", "Mess-Session gestartet", label.c_str());
+        NetUtil::sendJson(server, 200, resp);
+    });
+    server.on("/api/session/stop", HTTP_POST, [this]() {
+        JsonDocument resp;
+        resp["ok"] = analyzer.session().stop();
+        analyzer.session().appendStatusJson(resp["session"].to<JsonObject>());
+        events.info("session.stop", "Mess-Session gestoppt", "");
+        NetUtil::sendJson(server, 200, resp);
+    });
+    server.on("/api/session/export", HTTP_GET, [this]() {
+        JsonDocument doc;
+        analyzer.session().appendExportJson(doc.to<JsonObject>());
+        doc["name"] = config.deviceName;
+        doc["location"] = config.locationName;
+        analyzer.location().appendJson(doc["locationProfile"].to<JsonObject>());
         NetUtil::sendJson(server, 200, doc);
     });
     server.on("/api/rf/history", HTTP_GET, [this]() {
@@ -231,12 +355,17 @@ void App::registerRoutes() {
         history.toJson(HistoryStore::RF_SCORE, doc["rf_score"].to<JsonArray>());
         history.toJson(HistoryStore::AP_COUNT, doc["ap_count"].to<JsonArray>());
         history.toJson(HistoryStore::BLE_COUNT, doc["ble_count"].to<JsonArray>());
+        history.toJson(HistoryStore::DATA_QUALITY, doc["data_quality"].to<JsonArray>());
+        doc["capacity"] = (uint32_t)history.capacity();
         NetUtil::sendJson(server, 200, doc);
     });
     server.on("/api/wifi/list", HTTP_GET, [this]() {
         JsonDocument doc;
         doc["count"] = scanner.apCount();
+        doc["capacity"] = (uint32_t)scanner.capacity();
         doc["lastScanTs"] = scanner.lastScanTs();
+        doc["lastScanDurationMs"] = scanner.lastScanDurationMs();
+        doc["failRatePct"] = scanner.failRatePct();
         scanner.resultsToJson(doc["aps"].to<JsonArray>());
         NetUtil::sendJson(server, 200, doc);
     });
@@ -258,6 +387,9 @@ void App::registerRoutes() {
     server.on("/api/ble/list", HTTP_GET, [this]() {
         JsonDocument doc;
         doc["count"] = ble.deviceCount();
+        doc["capacity"] = (uint32_t)ble.capacity();
+        doc["lastScanDurationMs"] = ble.lastScanDurationMs();
+        doc["failRatePct"] = ble.failRatePct();
         ble.resultsToJson(doc["devices"].to<JsonArray>(), false);
         NetUtil::sendJson(server, 200, doc);
     });
@@ -296,13 +428,19 @@ void App::registerRoutes() {
         history.toJson(HistoryStore::BLE_COUNT, doc["points"].to<JsonArray>());
         NetUtil::sendJson(server, 200, doc);
     });
+    server.on("/api/history/quality", HTTP_GET, [this]() {
+        JsonDocument doc;
+        history.toJson(HistoryStore::DATA_QUALITY, doc["points"].to<JsonArray>());
+        NetUtil::sendJson(server, 200, doc);
+    });
 
     server.on("/api/events/recent", HTTP_GET, [this]() {
         JsonDocument doc;
         String type = server.hasArg("type") ? server.arg("type") : "";
         int level = server.hasArg("level") ? server.arg("level").toInt() : -1;
-        events.toJson(doc["events"].to<JsonArray>(), RFMON_EVENT_SIZE,
+        events.toJson(doc["events"].to<JsonArray>(), events.capacity(),
                       type.length() ? type.c_str() : nullptr, level);
+        doc["capacity"] = (uint32_t)events.capacity();
         NetUtil::sendJson(server, 200, doc);
     });
     server.on("/api/events/clear", HTTP_POST, [this]() {
@@ -333,6 +471,9 @@ void App::registerRoutes() {
         resp["hub"] = !config.enableHub || hub.lastOk();
         resp["heap"] = ESP.getFreeHeap();
         resp["ble"] = ble.ready();
+        resp["measurementQuality"] = analyzer.measurementQuality();
+        resp["scoreVersion"] = analyzer.scoreVersion();
+        HwCaps::appendJson(resp["hw"].to<JsonObject>());
         NetUtil::sendJson(server, 200, resp);
     });
     server.on("/api/system/restart", HTTP_POST, [this]() {
@@ -341,6 +482,11 @@ void App::registerRoutes() {
         NetUtil::sendJson(server, 200, resp);
         restartPending_ = true;
         restartAt_ = millis() + 400;
+    });
+    server.on("/api/system/hw", HTTP_GET, [this]() {
+        JsonDocument doc;
+        HwCaps::appendJson(doc.to<JsonObject>());
+        NetUtil::sendJson(server, 200, doc);
     });
 }
 
@@ -362,8 +508,7 @@ void App::tickScans() {
 
 void App::loop() {
     server.handleClient();
-    tickScans();
-    analyzer.loop();
+    if (!radioOnWorker_) radioTick();
     hub.loop();
 
     unsigned long now = millis();

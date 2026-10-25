@@ -74,10 +74,15 @@ label{display:block;color:var(--muted);font-size:11px;margin:10px 0 4px;text-tra
 .bar{height:8px;background:#0a100e;border:1px solid var(--line);overflow:hidden}
 .bar>i{display:block;height:100%;background:var(--accent)}
 .heat{display:grid;grid-template-columns:repeat(14,1fr);gap:4px;align-items:end;height:120px;margin-top:8px}
-.heat .col{display:flex;flex-direction:column;justify-content:flex-end;height:100%;gap:4px}
+.heat .col{display:flex;flex-direction:column;justify-content:flex-end;height:100%;gap:4px;position:relative;cursor:default}
 .heat .stk{flex:1;background:#0a100e;border:1px solid var(--line);display:flex;align-items:flex-end}
 .heat .stk i{display:block;width:100%;background:linear-gradient(180deg,var(--accent2),var(--accent));transition:height .35s ease}
 .heat .n{text-align:center;font-size:10px;color:var(--muted)}
+.heat .tip{display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);
+ background:#0a100e;border:1px solid var(--line);padding:8px 10px;font-size:11px;white-space:nowrap;z-index:5;color:var(--ink)}
+.heat .col:hover .tip{display:block}
+.dq{font-size:11px;color:var(--muted);margin-top:6px;letter-spacing:.06em;text-transform:uppercase}
+.dq b{color:var(--accent);font-weight:600}
 .break{display:grid;gap:8px}
 .break .rowb{display:grid;grid-template-columns:90px 1fr 36px;gap:8px;align-items:center;font-size:12px}
 .break .meter{height:10px;background:#0a100e;border:1px solid var(--line)}
@@ -93,6 +98,13 @@ label{display:block;color:var(--muted);font-size:11px;margin:10px 0 4px;text-tra
 .term .t{color:var(--muted)}
 .term .lvl0{color:var(--bad)}.term .lvl1{color:var(--warn)}.term .lvl2{color:var(--muted)}
 .meta{color:var(--muted);font-size:12px}
+tr.own{background:rgba(45,212,168,.08)}
+.tl-wrap{height:160px;background:#0a100e;border:1px solid var(--line);position:relative}
+.tl-wrap canvas{width:100%;height:160px;border:0;display:block}
+.seg{display:inline-flex;gap:4px;flex-wrap:wrap}
+.seg button{appearance:none;border:1px solid var(--line);background:#0a100e;color:var(--muted);padding:6px 10px;font:inherit;cursor:pointer}
+.seg button.on{border-color:var(--accent);color:var(--accent)}
+.filterbar{display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin:8px 0}
 .scanline{pointer-events:none;position:fixed;inset:0;background:repeating-linear-gradient(
  transparent 0 2px,rgba(0,0,0,.035) 2px 3px);z-index:0;opacity:.35}
 .shell>*{position:relative;z-index:1}
@@ -101,10 +113,11 @@ label{display:block;color:var(--muted);font-size:11px;margin:10px 0 4px;text-tra
 <div class="shell">
   <header class="brand">
     <div class="brand-mark">RF <span>Monitor</span></div>
-    <p class="brand-sub">Permanente Funklage · WLAN- und BLE-Scanner mit RF-Score, History und Hub-Telemetrie.</p>
+    <p class="brand-sub">Stationärer RF-Observability-Node · WLAN/BLE-Scan, Score, Messqualität, History und Hub.</p>
     <div class="topline">
       <span class="chip" id="h-ver">v-</span>
       <span class="chip" id="h-board">-</span>
+      <span class="chip" id="h-hw">-</span>
       <span class="chip"><b id="h-name">-</b></span>
       <span class="chip" id="h-loc">-</span>
       <span class="chip">CH <b id="h-ch">-</b></span>
@@ -130,7 +143,8 @@ label{display:block;color:var(--muted);font-size:11px;margin:10px 0 4px;text-tra
     <div class="hero">
       <div class="gauge-wrap">
         <canvas class="gauge" id="g-score" width="180" height="180"></canvas>
-        <div class="gauge-lab">RF-Score</div>
+        <div class="gauge-lab">RF-Score <span id="g-sv"></span></div>
+        <div class="dq">Data Quality <b id="g-dq">-</b> · Δ Loc <b id="g-dev">-</b> · Radio <b id="g-duty">-</b>%</div>
       </div>
       <div>
         <div class="kpi-grid" id="kpi-grid"></div>
@@ -150,7 +164,16 @@ label{display:block;color:var(--muted);font-size:11px;margin:10px 0 4px;text-tra
       </div>
     </div>
     <div class="panel">
-      <h3>Kanal-Heatmap 2.4 GHz</h3>
+      <h3>Aktuelle Befunde</h3>
+      <div id="findings" class="break"></div>
+    </div>
+    <div class="panel">
+      <h3>RF Timeline</h3>
+      <div class="meta" id="tl-leg">Score · AP · BLE · Events</div>
+      <div class="tl-wrap"><canvas id="c-timeline" width="800" height="160"></canvas></div>
+    </div>
+    <div class="panel">
+      <h3>Kanal-Heatmap 2.4 GHz <span class="meta">(AP-Druck-Proxy, nicht Airtime)</span></h3>
       <div class="heat" id="ch-heat"></div>
     </div>
   </div>
@@ -161,20 +184,68 @@ label{display:block;color:var(--muted);font-size:11px;margin:10px 0 4px;text-tra
       <div class="panel"><h3>RF-Score</h3><canvas id="c-score"></canvas></div>
     </div>
     <div class="panel">
-      <h3>Score-Breakdown (Abzuege)</h3>
+      <h3>Score-Breakdown (Abzuege) · Proxies markiert</h3>
       <div class="break" id="score-break"></div>
       <div id="rf-warn" class="warn" style="display:none;margin-top:12px"></div>
       <button class="btn btn-a" onclick="doWifiScan()">WLAN-Scan</button>
       <button class="btn btn-a" onclick="doBleScan()">BLE-Scan</button>
     </div>
     <div class="kpi-grid" id="rf-kpis" style="margin-bottom:14px"></div>
+    <div class="panel">
+      <h3>Messung / Radio-Budget</h3>
+      <div class="kpi-grid" id="meas-kpis"></div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>Standort-Baseline</h3>
+        <div class="meta" id="loc-status">keine Baseline</div>
+        <div class="bar" style="margin-top:8px"><i id="loc-bar" style="width:0%"></i></div>
+        <div class="row" style="margin-top:10px">
+          <div><label>Dauer (s)</label><input id="loc-dur" type="number" value="300" min="60" max="3600"></div>
+        </div>
+        <button class="btn btn-a" onclick="locCapture()">Baseline aufnehmen</button>
+        <button class="btn" onclick="locStop()">Jetzt speichern</button>
+        <button class="btn" onclick="locCancel()">Abbruch</button>
+        <button class="btn btn-r" onclick="locClear()">Loeschen</button>
+      </div>
+      <div class="panel">
+        <h3>Mess-Session</h3>
+        <div class="meta" id="sess-status">inaktiv</div>
+        <div class="row" style="margin-top:10px">
+          <div><label>Label</label><input id="sess-label" type="text" placeholder="technikraum-lauf1"></div>
+        </div>
+        <button class="btn btn-a" onclick="sessStart()">Start</button>
+        <button class="btn" onclick="sessStop()">Stop</button>
+        <button class="btn" onclick="sessExport()">Export JSON</button>
+        <button class="btn" onclick="snapExport()">Coexistence Snapshot</button>
+      </div>
+    </div>
   </div>
 
   <div class="pane" id="pane-wifi">
     <div class="panel">
       <h3>Access Points</h3>
-      <button class="btn btn-a" onclick="loadWifi()">Aktualisieren</button>
-      <button class="btn" onclick="doWifiScan()">Scan jetzt</button>
+      <div class="filterbar">
+        <div><label>Filter</label>
+          <select id="ap-filter" onchange="renderWifi()">
+            <option value="all">alle</option>
+            <option value="known">bekannt</option>
+            <option value="unknown">unbekannt</option>
+            <option value="own">eigenes</option>
+          </select>
+        </div>
+        <div><label>Sortierung</label>
+          <select id="ap-sort" onchange="renderWifi()">
+            <option value="rssi">RSSI</option>
+            <option value="channel">Kanal</option>
+            <option value="ssid">SSID</option>
+          </select>
+        </div>
+        <div><label>RSSI ≥</label><input id="ap-rssi" type="number" value="-90" onchange="renderWifi()"></div>
+        <div><label>Kanal</label><input id="ap-ch" type="number" min="0" max="14" placeholder="alle" onchange="renderWifi()"></div>
+        <button class="btn btn-a" onclick="loadWifi()">Aktualisieren</button>
+        <button class="btn" onclick="doWifiScan()">Scan jetzt</button>
+      </div>
       <table style="margin-top:10px"><thead><tr><th>SSID</th><th>RSSI</th><th>CH</th><th>Auth</th><th>BSSID</th><th></th></tr></thead>
       <tbody id="ap-body"></tbody></table>
     </div>
@@ -191,6 +262,16 @@ label{display:block;color:var(--muted);font-size:11px;margin:10px 0 4px;text-tra
   </div>
 
   <div class="pane" id="pane-history">
+    <div class="panel" style="margin-bottom:14px">
+      <h3>Zeitfenster</h3>
+      <div class="seg" id="hist-win">
+        <button type="button" data-n="30" onclick="setHistWin(30)">~2 min</button>
+        <button type="button" data-n="90" class="on" onclick="setHistWin(90)">~6 min</button>
+        <button type="button" data-n="180" onclick="setHistWin(180)">Ring</button>
+        <button type="button" data-n="0" onclick="setHistWin(0)">alles</button>
+      </div>
+      <div class="meta" id="hist-meta" style="margin-top:8px"></div>
+    </div>
     <div class="grid2">
       <div class="panel"><h3>RSSI</h3><canvas id="h-rssi"></canvas></div>
       <div class="panel"><h3>RF-Score</h3><canvas id="h-score"></canvas></div>
@@ -271,7 +352,12 @@ function jget(u){return fetch(u).then(r=>r.json())}
 function jpost(u,b){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json())}
 const ENC={0:'OPEN',1:'WEP',2:'WPA',3:'WPA2',4:'WPA/WPA2',5:'WPA2-ENT',6:'WPA3',7:'WPA2/WPA3',8:'WAPI'};
 let hist={rssi:[],rf_score:[],ap_count:[],ble_count:[]};
+let histWin=90;
 let lastChannels=[];
+let lastAps=[];
+let ownSsid='';
+let lastEvents=[];
+try{const s=JSON.parse(localStorage.getItem('rfmon-ev')||'{}'); if(s.type!=null) setTimeout(()=>{if($('ev-type'))$('ev-type').value=s.type; if($('ev-lvl')&&s.lvl!=null)$('ev-lvl').value=s.lvl},0)}catch(e){}
 
 function drawLine(id,series,color,min,max){
   const c=$(id); if(!c) return;
@@ -314,11 +400,21 @@ function drawGauge(score){
 function kpi(v,u,k){return '<div class="kpi"><div class="v">'+v+(u?'<small style="font-size:.45em;margin-left:4px">'+u+'</small>':'')+'</div><div class="k">'+k+'</div></div>'}
 function renderBreak(parts){
   const p=parts||{};
-  const rows=[['RSSI',p.rssi],['Jitter',p.jitter],['Congestion',p.congestion],['Density',p.density],['Stability',p.stability],['Disconnect',p.disconnect]];
+  const rows=[['OwnLink',p.ownLink!=null?p.ownLink:p.rssi],['Jitter',p.jitter],['Pressure*',p.pressure!=null?p.pressure:p.congestion],['Density*',p.density],['Occupancy*',p.occupancy],['Stability',p.stability],['Disconnect',p.disconnect],['QualGate',p.qualityGate]];
   const max=Math.max(25,...rows.map(r=>Number(r[1]||0)));
   $('score-break').innerHTML=rows.map(r=>{
     const v=Number(r[1]||0); const pct=Math.min(100,v/max*100);
     return '<div class="rowb"><span>'+r[0]+'</span><div class="meter"><i style="width:'+pct+'%"></i></div><span>-'+v+'</span></div>';
+  }).join('')+'<div class="meta" style="margin-top:8px">* Proxy · aktiv Score v'+(window._sv||2)+'</div>';
+}
+function renderFindings(list){
+  const el=$('findings'); if(!el) return;
+  const rows=list||[];
+  if(!rows.length){el.innerHTML='<div class="meta">keine Befunde</div>';return}
+  el.innerHTML=rows.map(f=>{
+    const col=f.level==='bad'?'var(--bad)':f.level==='warn'?'var(--warn)':f.level==='ok'?'var(--ok)':'var(--muted)';
+    const mark=f.level==='ok'?'✓':f.level==='warn'?'⚠':f.level==='bad'?'✕':'·';
+    return '<div class="rowb"><span style="color:'+col+'">'+mark+'</span><span style="grid-column:span 2">'+esc(f.text||f.code||'')+'</span></div>';
   }).join('');
 }
 function renderHeat(channels){
@@ -326,13 +422,22 @@ function renderHeat(channels){
   const max=Math.max(1,...lastChannels.map(c=>c.count||0));
   $('ch-heat').innerHTML=lastChannels.map(c=>{
     const pct=Math.round((c.count||0)/max*100);
-    return '<div class="col"><div class="stk"><i style="height:'+(c.count?Math.max(8,pct):0)+'%"></i></div><div class="n">'+c.ch+'</div></div>';
+    const tip='CH '+c.ch+' · APs '+(c.count||0)+
+      (c.maxRssi!=null?' · max '+c.maxRssi+' dBm':'')+
+      (c.avgRssi!=null?' · avg '+c.avgRssi+' dBm':'')+
+      ' · known '+(c.known||0)+' / unk '+(c.unknown||0)+
+      ' · '+(c.pressure||'-');
+    return '<div class="col"><div class="tip">'+tip+'</div><div class="stk"><i style="height:'+(c.count?Math.max(8,pct):0)+'%"></i></div><div class="n">'+c.ch+'</div></div>';
   }).join('');
 }
 function applyStatus(s){
+  ownSsid=s.ssid||ownSsid||'';
   $('h-name').textContent=s.name||'RF Monitor';
   $('h-ver').innerHTML='v<b>'+(s.version||'')+'</b>';
   $('h-board').textContent=s.boardLabel||s.board||'';
+  const hw=s.hw||{};
+  const al=(s.rf&&s.rf.alert)||{};
+  $('h-hw').textContent=(hw.cores||'?')+'C'+(hw.psram?' · PSRAM':' · RAM')+(hw.workerRunning?' · RF@0':'')+(al.any?' · ALERT':'');
   $('h-loc').textContent=s.location||'';
   $('h-ch').textContent=s.channel!=null?s.channel:'-';
   $('d-board').textContent=(s.chip||'')+' · '+(s.boardLabel||s.board||'');
@@ -342,49 +447,141 @@ function applyStatus(s){
   $('d-uptime').textContent=s.uptime||'-';
   $('d-hubok').textContent=s.hubEnabled?(s.hubOk?'online · '+(s.hub||''):'warte · '+(s.hub||'')):'deaktiviert';
   const hp=s.heap||0,hpct=Math.min(100,Math.round(hp/3276));
-  $('d-heap').textContent=Math.round(hp/1024)+' KB';
+  $('d-heap').textContent=Math.round(hp/1024)+' KB'+(hw.psram?' · PSRAM '+Math.round((hw.psramFree||0)/1024)+' KB':'');
   $('b-heap').style.width=hpct+'%';
   $('b-heap').style.background=hpct>40?'var(--ok)':hpct>20?'var(--warn)':'var(--bad)';
   const rf=s.rf||{};
   drawGauge(Number(rf.rfScore||0));
+  window._sv=rf.scoreVersion!=null?rf.scoreVersion:2;
+  $('g-sv').textContent='v'+window._sv;
+  $('g-dq').textContent=rf.measurementQuality!=null?rf.measurementQuality:'-';
+  const loc=rf.location||{};
+  const dev=rf.locationDeviation!=null?rf.locationDeviation:(loc.deviation!=null?loc.deviation:null);
+  $('g-dev').textContent=dev!=null?(dev>0?'+'+dev:String(dev)):'—';
+  $('g-duty').textContent=Number(rf.radioDutyPct||0).toFixed(1);
   renderBreak(rf.scoreParts);
+  renderFindings(rf.findings||[]);
   $('kpi-grid').innerHTML=
-    kpi(rf.rfScore||0,'','Score')+
+    kpi(rf.rfScore||0,'','Score v'+window._sv)+
+    kpi(rf.scoreV1!=null?rf.scoreV1:'-','','Score v1')+
+    kpi(rf.scoreV2!=null?rf.scoreV2:'-','','Score v2')+
+    kpi(rf.measurementQuality!=null?rf.measurementQuality:'-','','Data Qual')+
+    kpi(dev!=null?(dev>0?'+'+dev:dev):'—','','Loc Δ')+
     kpi(s.rssi||0,'dBm','RSSI')+
     kpi(rf.apCount||0,'','APs')+
-    kpi(rf.bleCount||0,'','BLE')+
-    kpi(rf.channelCongestion||0,'','Congestion')+
-    kpi(rf.stability||0,'','Stability');
+    kpi(rf.bleCount||0,'','BLE');
+  if(loc.capturing){
+    $('loc-status').textContent='Aufnahme… '+loc.captureProgressPct+'% · '+loc.captureSamples+' Samples / '+loc.captureTargetS+'s';
+    $('loc-bar').style.width=(loc.captureProgressPct||0)+'%';
+  }else if(loc.valid){
+    const b=loc.baseline||{};
+    $('loc-status').textContent='Baseline ok · Score≈'+Number(b.score||0).toFixed(0)+' · APs≈'+Number(b.apCount||0).toFixed(1)+' · n='+loc.sampleCount;
+    $('loc-bar').style.width='100%';
+  }else{
+    $('loc-status').textContent='keine Baseline';
+    $('loc-bar').style.width='0%';
+  }
+  const sess=rf.session||{};
+  if(sess.active){
+    $('sess-status').textContent='aktiv · '+sess.sampleCount+' Samples · avgScore '+Number(sess.avgScore||0).toFixed(0);
+  }else if(sess.sampleCount){
+    $('sess-status').textContent='gestoppt · '+sess.sampleCount+' Samples · min/max '+sess.minScore+'/'+sess.maxScore;
+  }else{
+    $('sess-status').textContent='inaktiv';
+  }
   $('rf-kpis').innerHTML=
     kpi(rf.wifiRssi||s.rssi||0,'dBm','RSSI')+
     kpi(Number(rf.wifiRssiAvg||0).toFixed(1),'dBm','Mittel')+
     kpi(rf.wifiRssiMin||0,'dBm','Min')+
     kpi(rf.wifiRssiMax||0,'dBm','Max')+
     kpi(Number(rf.wifiRssiJitter||0).toFixed(1),'dB','Jitter')+
-    kpi(rf.channelLoad||0,'','Kanal-Last')+
-    kpi(rf.apDensity||0,'','Dichte')+
+    kpi(rf.channelOccupancyProxy!=null?rf.channelOccupancyProxy:(rf.channelLoad||0),'','Occupancy*')+
+    kpi(rf.apDensity||0,'','Dichte*')+
     kpi(rf.unknownApCount||0,'','unbekannt')+
     kpi(rf.beaconCount||0,'','Beacons')+
     kpi(rf.disconnects||0,'','Drops');
+  const obs=(rf.observation&&rf.observation.wifi)||{};
+  const bleo=(rf.observation&&rf.observation.ble)||{};
+  $('meas-kpis').innerHTML=
+    kpi(obs.scanDurationMs!=null?obs.scanDurationMs:(rf.wifiScanDurationMs||0),'ms','WiFi Scan')+
+    kpi(bleo.scanDurationMs!=null?bleo.scanDurationMs:(rf.bleScanDurationMs||0),'ms','BLE Scan')+
+    kpi(Number(rf.wifiScanFailRate||obs.failRatePct||0).toFixed(1),'%','WiFi Fail')+
+    kpi(Number(rf.bleScanFailRate||bleo.failRatePct||0).toFixed(1),'%','BLE Fail')+
+    kpi(Number(rf.radioDutyPct||0).toFixed(1),'%','Radio Duty')+
+    kpi(hw.historyCapacity||'-','','Hist Cap')+
+    kpi(hw.maxAps||'-','','AP Cap')+
+    kpi(hw.maxBle||'-','','BLE Cap');
   const warns=[];
   if((rf.rfScore||100)<40) warns.push('RF-Score niedrig');
-  if((rf.channelCongestion||0)>=70) warns.push('Kanalueberlastung');
+  if((rf.measurementQuality||100)<50) warns.push('Messqualitaet niedrig');
+  if((rf.channelCongestion||0)>=70) warns.push('Kanaldruck-Proxy hoch');
+  if((rf.radioDutyPct||0)>45) warns.push('Radio-Zeitbudget hoch');
+  if(dev!=null && dev<=-25) warns.push('Abweichung vom Standortnormal');
   if((s.rssi||-30)<-75) warns.push('eigene Verbindung schwach');
+  if(loc.capturing) warns.push('Baseline-Aufnahme laeuft');
   $('rf-warn').style.display=warns.length?'block':'none';
   $('rf-warn').textContent=warns.join(' · ');
-  hist.rssi.push({v:s.rssi||0}); if(hist.rssi.length>180) hist.rssi.shift();
-  hist.rf_score.push({v:Number(rf.rfScore||0)}); if(hist.rf_score.length>180) hist.rf_score.shift();
-  hist.ap_count.push({v:Number(rf.apCount||0)}); if(hist.ap_count.length>180) hist.ap_count.shift();
-  hist.ble_count.push({v:Number(rf.bleCount||0)}); if(hist.ble_count.length>180) hist.ble_count.shift();
+  const ts=s.uptimeS||Math.floor(Date.now()/1000);
+  hist.rssi.push({v:s.rssi||0,ts}); if(hist.rssi.length>180) hist.rssi.shift();
+  hist.rf_score.push({v:Number(rf.rfScore||0),ts}); if(hist.rf_score.length>180) hist.rf_score.shift();
+  hist.ap_count.push({v:Number(rf.apCount||0),ts}); if(hist.ap_count.length>180) hist.ap_count.shift();
+  hist.ble_count.push({v:Number(rf.bleCount||0),ts}); if(hist.ble_count.length>180) hist.ble_count.shift();
   drawAll(); drawSpark(hist.rssi);
 }
+function sliceHist(series){
+  if(!histWin||histWin<=0||series.length<=histWin) return series;
+  return series.slice(series.length-histWin);
+}
+function setHistWin(n){
+  histWin=n;
+  document.querySelectorAll('#hist-win button').forEach(b=>b.classList.toggle('on',Number(b.dataset.n)===n));
+  $('hist-meta').textContent=n===0?'gesamter Ringbuffer':('letzte '+n+' Punkte');
+  drawAll();
+}
+function drawTimeline(){
+  const c=$('c-timeline'); if(!c) return;
+  const w=c.width=c.clientWidth||640, h=c.height=160;
+  const ctx=c.getContext('2d'); ctx.clearRect(0,0,w,h);
+  const sc=sliceHist(hist.rf_score), ap=sliceHist(hist.ap_count), bl=sliceHist(hist.ble_count);
+  const n=Math.max(sc.length,ap.length,bl.length,2);
+  const pad=8;
+  const plot=(series,color,ymin,ymax)=>{
+    if(!series.length) return;
+    ctx.strokeStyle=color; ctx.lineWidth=1.5; ctx.beginPath();
+    series.forEach((p,i)=>{
+      const v=typeof p==='object'?Number(p.v):Number(p);
+      const x=pad+(w-2*pad)*(i/(n-1||1));
+      const y=h-pad-((Math.max(ymin,Math.min(ymax,v))-ymin)/(ymax-ymin||1))*(h-2*pad);
+      i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+    });
+    ctx.stroke();
+  };
+  plot(sc,'#f0b429',0,100);
+  const apMax=Math.max(5,...ap.map(p=>Number(p.v||p||0)));
+  plot(ap,'#2dd4a8',0,apMax);
+  const blMax=Math.max(5,...bl.map(p=>Number(p.v||p||0)));
+  plot(bl,'#8aa094',0,blMax);
+  // event markers (relative to uptime seconds — approximate at right edge)
+  if(lastEvents.length && sc.length){
+    const t0=Number((sc[0]&&sc[0].ts)||0), t1=Number((sc[sc.length-1]&&sc[sc.length-1].ts)||t0+1);
+    lastEvents.slice(0,24).forEach(e=>{
+      const ts=Number(e.ts||0);
+      if(t1<=t0||ts<t0||ts>t1) return;
+      const x=pad+(w-2*pad)*((ts-t0)/(t1-t0));
+      ctx.strokeStyle=e.level===0?'#ef5b5b':e.level===1?'#f0b429':'#8aa094';
+      ctx.beginPath(); ctx.moveTo(x,pad); ctx.lineTo(x,h-pad); ctx.stroke();
+    });
+  }
+  $('tl-leg').textContent='gelb=Score · gruen=APs · grau=BLE · Striche=Events';
+}
 function drawAll(){
-  drawLine('c-rssi',hist.rssi,'#2dd4a8',-100,-20);
-  drawLine('c-score',hist.rf_score,'#f0b429',0,100);
-  drawLine('h-rssi',hist.rssi,'#2dd4a8',-100,-20);
-  drawLine('h-score',hist.rf_score,'#f0b429',0,100);
-  drawLine('h-ap',hist.ap_count,'#f0b429',0,null);
-  drawLine('h-ble',hist.ble_count,'#2dd4a8',0,null);
+  drawLine('c-rssi',sliceHist(hist.rssi),'#2dd4a8',-100,-20);
+  drawLine('c-score',sliceHist(hist.rf_score),'#f0b429',0,100);
+  drawLine('h-rssi',sliceHist(hist.rssi),'#2dd4a8',-100,-20);
+  drawLine('h-score',sliceHist(hist.rf_score),'#f0b429',0,100);
+  drawLine('h-ap',sliceHist(hist.ap_count),'#f0b429',0,null);
+  drawLine('h-ble',sliceHist(hist.ble_count),'#2dd4a8',0,null);
+  drawTimeline();
 }
 function loadHistory(){
   jget('/api/rf/history').then(h=>{
@@ -392,10 +589,32 @@ function loadHistory(){
     drawAll(); drawSpark(hist.rssi);
   }).catch(()=>{});
 }
-function loadWifi(){
-  jget('/api/wifi/list').then(d=>{
-    $('ap-body').innerHTML=(d.aps||[]).map(a=>'<tr><td>'+(a.hidden?'<i>versteckt</i>':esc(a.ssid))+'</td><td>'+a.rssi+'</td><td>'+a.channel+'</td><td>'+(ENC[a.enc]||a.enc)+'</td><td class="mono">'+a.bssid+'</td><td><span class="tag '+(a.known?'k':'u')+'">'+(a.known?'bekannt':'neu')+'</span></td></tr>').join('')||'<tr><td colspan="6">keine Daten</td></tr>';
+function renderWifi(){
+  let rows=(lastAps||[]).slice();
+  const f=$('ap-filter')?$('ap-filter').value:'all';
+  const sort=$('ap-sort')?$('ap-sort').value:'rssi';
+  const minR=Number($('ap-rssi')?$('ap-rssi').value:-999);
+  const chF=$('ap-ch')&&$('ap-ch').value!==''?Number($('ap-ch').value):null;
+  rows=rows.filter(a=>{
+    if(a.rssi<minR) return false;
+    if(chF!=null && a.channel!==chF) return false;
+    if(f==='known' && !a.known) return false;
+    if(f==='unknown' && a.known) return false;
+    if(f==='own' && !(ownSsid && a.ssid && a.ssid.toLowerCase()===ownSsid.toLowerCase())) return false;
+    return true;
   });
+  rows.sort((a,b)=>{
+    if(sort==='channel') return (a.channel||0)-(b.channel||0) || (b.rssi-a.rssi);
+    if(sort==='ssid') return String(a.ssid||'').localeCompare(String(b.ssid||''));
+    return (b.rssi||0)-(a.rssi||0);
+  });
+  $('ap-body').innerHTML=rows.map(a=>{
+    const isOwn=ownSsid && a.ssid && a.ssid.toLowerCase()===ownSsid.toLowerCase();
+    return '<tr class="'+(isOwn?'own':'')+'"><td>'+(a.hidden?'<i>versteckt</i>':esc(a.ssid))+(isOwn?' <span class="tag k">eigen</span>':'')+'</td><td>'+a.rssi+'</td><td>'+a.channel+'</td><td>'+(ENC[a.enc]||a.enc)+'</td><td class="mono">'+a.bssid+'</td><td><span class="tag '+(a.known?'k':'u')+'">'+(a.known?'bekannt':'neu')+'</span></td></tr>';
+  }).join('')||'<tr><td colspan="6">keine Daten</td></tr>';
+}
+function loadWifi(){
+  jget('/api/wifi/list').then(d=>{ lastAps=d.aps||[]; renderWifi(); });
   jget('/api/wifi/channels').then(d=>renderHeat(d.channels||[]));
 }
 function loadBle(){
@@ -406,14 +625,26 @@ function loadBle(){
 function esc(t){return String(t||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function loadEvents(){
   const t=$('ev-type').value, l=$('ev-lvl').value;
+  try{localStorage.setItem('rfmon-ev',JSON.stringify({type:t,lvl:l}))}catch(e){}
   let u='/api/events/recent'; const q=[]; if(t) q.push('type='+encodeURIComponent(t)); if(l!=='') q.push('level='+l); if(q.length) u+='?'+q.join('&');
   jget(u).then(d=>{
-    $('ev-term').innerHTML=(d.events||[]).map(e=>'<div class="e lvl'+e.level+'"><div class="t">'+e.ts+'s</div><div><b>'+esc(e.type)+'</b> — '+esc(e.title)+(e.details?' <span class="meta">'+esc(e.details)+'</span>':'')+'</div></div>').join('')||'<div class="meta">keine Ereignisse</div>';
+    lastEvents=d.events||[];
+    $('ev-term').innerHTML=lastEvents.map(e=>'<div class="e lvl'+e.level+'"><div class="t">'+e.ts+'s</div><div><b>'+esc(e.type)+'</b> — '+esc(e.title)+(e.details?' <span class="meta">'+esc(e.details)+'</span>':'')+'</div></div>').join('')||'<div class="meta">keine Ereignisse</div>';
+    drawTimeline();
   });
 }
 function clearEvents(){jpost('/api/events/clear',{}).then(loadEvents)}
 function doWifiScan(){jget('/api/wifi/scan').then(()=>setTimeout(loadWifi,4000))}
 function doBleScan(){jget('/api/ble/scan').then(()=>setTimeout(loadBle,5000))}
+function locCapture(){jpost('/api/location/capture',{durationS:Number($('loc-dur').value)||300}).then(d=>{$('loc-status').textContent=d.ok?'Aufnahme gestartet ('+d.durationS+'s)':'Fehler'})}
+function locStop(){jpost('/api/location/capture/stop',{}).then(d=>{$('loc-status').textContent=d.valid?'Baseline gespeichert':'zu wenig Samples'})}
+function locCancel(){jpost('/api/location/capture/cancel',{}).then(()=>{$('loc-status').textContent='abgebrochen';$('loc-bar').style.width='0%'})}
+function locClear(){if(confirm('Baseline loeschen?'))jpost('/api/location/clear',{}).then(()=>{$('loc-status').textContent='keine Baseline';$('loc-bar').style.width='0%'})}
+function sessStart(){jpost('/api/session/start',{label:$('sess-label').value||''}).then(d=>{$('sess-status').textContent=d.ok?'aktiv':'Fehler'})}
+function sessStop(){jpost('/api/session/stop',{}).then(d=>{const s=d.session||{};$('sess-status').textContent='gestoppt · '+(s.sampleCount||0)+' Samples'})}
+function downloadJson(name,obj){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}));a.download=name;a.click()}
+function sessExport(){jget('/api/session/export').then(d=>downloadJson('rfmon-session.json',d))}
+function snapExport(){jget('/api/rf/snapshot').then(d=>downloadJson('rfmon-coexistence-snapshot.json',d))}
 function loadCfg(){
   jget('/api/config/get').then(c=>{
     $('c-name').value=c.deviceName||''; $('c-loc').value=c.locationName||''; $('c-mode').value=c.opMode||'normal';
@@ -469,6 +700,6 @@ const es=new EventSource('/events');
 es.onopen=()=>{$('sse-dot').classList.add('on');$('sse-lbl').textContent='Live'};
 es.onerror=()=>{$('sse-dot').classList.remove('on');$('sse-lbl').textContent='Getrennt'};
 es.onmessage=e=>{try{applyStatus(JSON.parse(e.data))}catch(ex){}};
-jget('/api/status').then(applyStatus); loadHistory(); loadWifi(); applyHash();
+jget('/api/status').then(applyStatus); loadHistory(); loadWifi(); loadEvents(); setHistWin(90); applyHash();
 </script></body></html>
 )RFUI";
