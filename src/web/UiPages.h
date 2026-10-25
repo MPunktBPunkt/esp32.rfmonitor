@@ -220,7 +220,25 @@ tr.own{background:rgba(45,212,168,.08)}
         <h3>Mess-Session</h3>
         <div class="meta" id="sess-status">inaktiv</div>
         <div class="row" style="margin-top:10px">
+          <div><label>Profil</label>
+            <select id="sess-profile">
+              <option value="field">Field Session (10 min)</option>
+              <option value="characterization">Score Characterization</option>
+              <option value="quick">Quick Check (3 min)</option>
+              <option value="diagnose">Diagnose</option>
+            </select>
+          </div>
           <div><label>Label</label><input id="sess-label" type="text" placeholder="technikraum-lauf1"></div>
+        </div>
+        <div class="row" id="sess-phases" style="margin-top:8px;display:none;flex-wrap:wrap;gap:6px">
+          <span class="meta">Phase:</span>
+          <button class="btn" onclick="sessPhase('A','RSSI -20dB')">A</button>
+          <button class="btn" onclick="sessPhase('B','+5 APs')">B</button>
+          <button class="btn" onclick="sessPhase('C','same channel')">C</button>
+          <button class="btn" onclick="sessPhase('D','more channels')">D</button>
+          <button class="btn" onclick="sessPhase('E','disconnect')">E</button>
+          <button class="btn" onclick="sessPhase('F','stabilize')">F</button>
+          <button class="btn" onclick="sessPhase('G','baseline')">G</button>
         </div>
         <button class="btn btn-a" onclick="sessStart()">Start</button>
         <button class="btn" onclick="sessStop()">Stop</button>
@@ -563,10 +581,14 @@ function applyStatus(s){
     $('loc-bar').style.width='0%';
   }
   const sess=rf.session||{};
+  const phBox=$('sess-phases');
+  if(phBox) phBox.style.display=(sess.active&&sess.characterization)?'flex':'none';
   if(sess.active){
-    $('sess-status').textContent='aktiv · '+sess.sampleCount+' Samples · avgScore '+Number(sess.avgScore||0).toFixed(0);
+    const rem=sess.remainingS!=null?(' · rest '+sess.remainingS+'s'):'';
+    const ph=sess.phase?(' · phase '+sess.phase):'';
+    $('sess-status').textContent='aktiv · '+(sess.profile||'?')+' · '+sess.sampleCount+' Samples · avgScore '+Number(sess.avgScore||0).toFixed(0)+ph+rem;
   }else if(sess.sampleCount){
-    $('sess-status').textContent='gestoppt · '+sess.sampleCount+' Samples · min/max '+sess.minScore+'/'+sess.maxScore;
+    $('sess-status').textContent='gestoppt · '+(sess.profile||'')+' · '+sess.sampleCount+' Samples · min/max '+sess.minScore+'/'+sess.maxScore;
   }else{
     $('sess-status').textContent='inaktiv';
   }
@@ -788,8 +810,18 @@ function locCapture(){jpost('/api/location/capture',{durationS:Number($('loc-dur
 function locStop(){jpost('/api/location/capture/stop',{}).then(d=>{$('loc-status').textContent=d.valid?'Baseline gespeichert':'zu wenig Samples'})}
 function locCancel(){jpost('/api/location/capture/cancel',{}).then(()=>{$('loc-status').textContent='abgebrochen';$('loc-bar').style.width='0%'})}
 function locClear(){if(confirm('Baseline loeschen?'))jpost('/api/location/clear',{}).then(()=>{$('loc-status').textContent='keine Baseline';$('loc-bar').style.width='0%'})}
-function sessStart(){jpost('/api/session/start',{label:$('sess-label').value||''}).then(d=>{$('sess-status').textContent=d.ok?'aktiv':'Fehler'})}
-function sessStop(){jpost('/api/session/stop',{}).then(d=>{const s=d.session||{};$('sess-status').textContent='gestoppt · '+(s.sampleCount||0)+' Samples'})}
+function sessStart(){
+  jpost('/api/session/start',{
+    label:$('sess-label').value||'',
+    profile:($('sess-profile')&&$('sess-profile').value)||'field'
+  }).then(d=>{
+    const s=d.session||{};
+    $('sess-status').textContent=d.ok?('aktiv · '+(s.profile||'')):(d.error||'Fehler');
+    if($('sess-phases')) $('sess-phases').style.display=(d.ok&&s.characterization)?'flex':'none';
+  })
+}
+function sessPhase(id,note){jpost('/api/session/phase',{id:id,note:note||''}).then(d=>{$('sess-status').textContent=d.ok?('phase '+id):'Phase-Fehler'})}
+function sessStop(){jpost('/api/session/stop',{}).then(d=>{const s=d.session||{};$('sess-status').textContent='gestoppt · '+(s.sampleCount||0)+' Samples'; if($('sess-phases'))$('sess-phases').style.display='none'})}
 function downloadJson(name,obj){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}));a.download=name;a.click()}
 function sessExport(){jget('/api/session/export').then(d=>downloadJson('rfmon-session.json',d))}
 function snapExport(){jget('/api/rf/snapshot').then(d=>downloadJson('rfmon-coexistence-snapshot.json',d))}

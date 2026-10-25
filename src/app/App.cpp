@@ -322,26 +322,56 @@ void App::registerRoutes() {
         NetUtil::sendJson(server, 200, resp);
     });
 
+    server.on("/api/session/profiles", HTTP_GET, [this]() {
+        JsonDocument doc;
+        SessionProfile::listToJson(doc["profiles"].to<JsonArray>());
+        NetUtil::sendJson(server, 200, doc);
+    });
     server.on("/api/session/status", HTTP_GET, [this]() {
         JsonDocument doc;
         analyzer.session().appendStatusJson(doc.to<JsonObject>());
         NetUtil::sendJson(server, 200, doc);
     });
     server.on("/api/session/start", HTTP_POST, [this]() {
+        JsonDocument body;
         String label;
+        String profileId = "field";
+        uint16_t durationOverride = 0;
         String raw = server.arg("plain");
-        if (raw.length()) {
-            JsonDocument body;
-            if (!deserializeJson(body, raw)) label = body["label"] | "";
+        if (raw.length() && !deserializeJson(body, raw)) {
+            if (!body["label"].isNull()) label = body["label"].as<String>();
+            if (!body["profile"].isNull()) profileId = body["profile"].as<String>();
+            if (!body["durationS"].isNull()) durationOverride = body["durationS"].as<uint16_t>();
         }
+        const SessionProfileDef* prof = SessionProfile::find(profileId.c_str());
         JsonDocument resp;
-        resp["ok"] = analyzer.session().start(label.c_str());
-        events.info("session.start", "Mess-Session gestartet", label.c_str());
+        if (!prof) {
+            resp["ok"] = false;
+            resp["error"] = "unknown profile";
+            NetUtil::sendJson(server, 400, resp);
+            return;
+        }
+        applySessionProfile(*prof);
+        resp["ok"] = analyzer.session().start(label.c_str(), prof, durationOverride);
+        analyzer.session().appendStatusJson(resp["session"].to<JsonObject>());
+        events.info("session.start", "Mess-Session gestartet", analyzer.session().profileId());
         NetUtil::sendJson(server, 200, resp);
+    });
+    server.on("/api/session/phase", HTTP_POST, [this]() {
+        JsonDocument body;
+        if (!NetUtil::readJsonBody(server, body)) return;
+        String id = body["id"] | "";
+        String note = body["note"] | "";
+        JsonDocument resp;
+        resp["ok"] = analyzer.session().markPhase(id.c_str(), note.c_str());
+        analyzer.session().appendStatusJson(resp["session"].to<JsonObject>());
+        if (resp["ok"]) events.info("session.phase", "Session-Phase", id.c_str());
+        NetUtil::sendJson(server, resp["ok"] ? 200 : 400, resp);
     });
     server.on("/api/session/stop", HTTP_POST, [this]() {
         JsonDocument resp;
         resp["ok"] = analyzer.session().stop();
+        restoreScanIntervals();
         analyzer.session().appendStatusJson(resp["session"].to<JsonObject>());
         events.info("session.stop", "Mess-Session gestoppt", "");
         NetUtil::sendJson(server, 200, resp);
@@ -558,11 +588,38 @@ void App::tickScans() {
     if (ble.due()) ble.startWindow();
 }
 
+void App::applySessionProfile(const SessionProfileDef& profile) {
+    if (!profileOverrides_) {
+        savedWifiIntervalS_ = config.wifiScanIntervalS;
+        savedBleIntervalS_ = config.bleScanIntervalS;
+        savedBleEnabled_ = config.bleEnabled;
+        savedOpMode_ = config.opMode;
+        profileOverrides_ = true;
+    }
+    config.wifiScanIntervalS = profile.wifiScanIntervalS;
+    config.bleScanIntervalS = profile.bleScanIntervalS;
+    config.bleEnabled = profile.bleEnabled;
+    // Don't persist — temporary override for the campaign only.
+}
+
+void App::restoreScanIntervals() {
+    if (!profileOverrides_) return;
+    config.wifiScanIntervalS = savedWifiIntervalS_;
+    config.bleScanIntervalS = savedBleIntervalS_;
+    config.bleEnabled = savedBleEnabled_;
+    config.opMode = savedOpMode_;
+    profileOverrides_ = false;
+}
+
 void App::loop() {
     server.handleClient();
     if (!radioOnWorker_) radioTick();
     hub.loop();
     TimeBase::loop();
+    if (analyzer.session().loopAutoStop()) {
+        restoreScanIntervals();
+        events.info("session.stop", "Mess-Session Auto-Stop", analyzer.session().profileId());
+    }
 
     unsigned long now = millis();
     if (now - lastSse_ >= 4000UL) {

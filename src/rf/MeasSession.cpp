@@ -8,9 +8,20 @@ void MeasSession::begin() {
     sampleCount_ = 0;
     ringCount_ = 0;
     head_ = 0;
+    phaseCount_ = 0;
+    currentPhaseId_[0] = 0;
 }
 
-bool MeasSession::start(const char* label) {
+void MeasSession::closeOpenPhase(uint32_t sampleIdx, uint32_t uptimeS) {
+    if (phaseCount_ == 0) return;
+    Phase& p = phases_[phaseCount_ - 1];
+    if (!p.open) return;
+    p.open = false;
+    p.endSample = sampleIdx;
+    p.endUptimeS = uptimeS;
+}
+
+bool MeasSession::start(const char* label, const SessionProfileDef* profile, uint16_t durationOverrideS) {
     active_ = true;
     startS_ = TimeBase::uptimeS();
     endS_ = 0;
@@ -28,8 +39,27 @@ bool MeasSession::start(const char* label) {
     maxQuality_ = 0;
     head_ = 0;
     ringCount_ = 0;
+    phaseCount_ = 0;
+    currentPhaseId_[0] = 0;
+
     memset(label_, 0, sizeof(label_));
-    if (label && label[0]) strncpy(label_, label, sizeof(label_) - 1);
+    memset(profileId_, 0, sizeof(profileId_));
+    memset(profileTitle_, 0, sizeof(profileTitle_));
+
+    const SessionProfileDef& p = profile ? *profile : SessionProfile::field();
+    strncpy(profileId_, p.id, sizeof(profileId_) - 1);
+    strncpy(profileTitle_, p.title, sizeof(profileTitle_) - 1);
+    durationS_ = durationOverrideS ? durationOverrideS : p.durationS;
+    wifiIntervalS_ = p.wifiScanIntervalS;
+    bleIntervalS_ = p.bleScanIntervalS;
+    bleEnabled_ = p.bleEnabled;
+    characterization_ = p.characterization;
+
+    if (label && label[0]) {
+        strncpy(label_, label, sizeof(label_) - 1);
+    } else {
+        snprintf(label_, sizeof(label_), "%s-%lu", p.id, (unsigned long)startS_);
+    }
     return true;
 }
 
@@ -39,6 +69,31 @@ bool MeasSession::stop() {
     endS_ = TimeBase::uptimeS();
     endTimeValid_ = TimeBase::timeValid();
     endEpochS_ = endTimeValid_ ? TimeBase::epochS() : 0;
+    closeOpenPhase(sampleCount_, endS_);
+    currentPhaseId_[0] = 0;
+    return true;
+}
+
+bool MeasSession::markPhase(const char* id, const char* note) {
+    if (!active_ || !id || !id[0]) return false;
+    uint32_t now = TimeBase::uptimeS();
+    closeOpenPhase(sampleCount_, now);
+    if (phaseCount_ >= kMaxPhases) return false;
+    Phase& p = phases_[phaseCount_++];
+    memset(&p, 0, sizeof(p));
+    strncpy(p.id, id, sizeof(p.id) - 1);
+    if (note && note[0]) strncpy(p.note, note, sizeof(p.note) - 1);
+    p.startSample = sampleCount_;
+    p.startUptimeS = now;
+    p.open = true;
+    strncpy(currentPhaseId_, p.id, sizeof(currentPhaseId_) - 1);
+    return true;
+}
+
+bool MeasSession::loopAutoStop() {
+    if (!active_ || durationS_ == 0) return false;
+    if (TimeBase::uptimeS() - startS_ < durationS_) return false;
+    stop();
     return true;
 }
 
@@ -78,6 +133,8 @@ void MeasSession::noteSample(uint8_t score, uint8_t quality, int8_t deviation,
     s.flags = connected ? 0x01 : 0x00;
     s.ownRssi = (int8_t)lroundf(ownRssi);
     s.radioDuty = radioDuty > 255 ? 255 : (uint8_t)lroundf(radioDuty);
+    memset(s.phase, 0, sizeof(s.phase));
+    if (currentPhaseId_[0]) strncpy(s.phase, currentPhaseId_, sizeof(s.phase) - 1);
     head_ = (head_ + 1) % kMaxSamples;
     if (ringCount_ < kMaxSamples) ringCount_++;
 }
@@ -85,6 +142,14 @@ void MeasSession::noteSample(uint8_t score, uint8_t quality, int8_t deviation,
 void MeasSession::appendStatusJson(JsonObject target) const {
     target["active"] = active_;
     target["label"] = label_;
+    target["profile"] = profileId_;
+    target["profileTitle"] = profileTitle_;
+    target["durationS"] = durationS_;
+    target["wifiScanIntervalS"] = wifiIntervalS_;
+    target["bleScanIntervalS"] = bleIntervalS_;
+    target["bleEnabled"] = bleEnabled_;
+    target["characterization"] = characterization_;
+    target["phase"] = currentPhaseId_;
     target["startS"] = startS_;
     target["endS"] = endS_;
     target["startEpochS"] = startEpochS_;
@@ -92,8 +157,15 @@ void MeasSession::appendStatusJson(JsonObject target) const {
     target["timeValid"] = startTimeValid_;
     target["sampleCount"] = sampleCount_;
     target["ringCount"] = (uint32_t)ringCount_;
+    target["ringCapacity"] = (uint32_t)kMaxSamples;
     target["warnEvents"] = warnEvents_;
     target["errorEvents"] = errorEvents_;
+    if (active_ && durationS_ > 0) {
+        uint32_t elapsed = TimeBase::uptimeS() - startS_;
+        target["elapsedS"] = elapsed;
+        target["remainingS"] = elapsed >= durationS_ ? 0 : (durationS_ - elapsed);
+        target["progressPct"] = elapsed >= durationS_ ? 100 : (elapsed * 100UL) / durationS_;
+    }
     if (sampleCount_ == 0) return;
     float n = (float)sampleCount_;
     target["avgScore"] = sumScore_ / n;
@@ -110,12 +182,33 @@ void MeasSession::appendExportJson(JsonObject target) const {
     target["scoreVersion"] = RFMON_SCORE_VERSION;
     target["fwVersion"] = FW_VERSION;
     target["board"] = RFMON_BOARD_ID;
+    JsonObject prof = target["sessionProfile"].to<JsonObject>();
+    prof["id"] = profileId_;
+    prof["title"] = profileTitle_;
+    prof["durationS"] = durationS_;
+    prof["wifiScanIntervalS"] = wifiIntervalS_;
+    prof["bleScanIntervalS"] = bleIntervalS_;
+    prof["bleEnabled"] = bleEnabled_;
+    prof["characterization"] = characterization_;
+
+    JsonArray ph = target["phases"].to<JsonArray>();
+    for (uint8_t i = 0; i < phaseCount_; i++) {
+        JsonObject o = ph.add<JsonObject>();
+        o["id"] = phases_[i].id;
+        o["note"] = phases_[i].note;
+        o["startSample"] = phases_[i].startSample;
+        o["endSample"] = phases_[i].open ? sampleCount_ : phases_[i].endSample;
+        o["startUptimeS"] = phases_[i].startUptimeS;
+        o["endUptimeS"] = phases_[i].open ? TimeBase::uptimeS() : phases_[i].endUptimeS;
+        o["open"] = phases_[i].open;
+    }
+
     JsonArray arr = target["samples"].to<JsonArray>();
     for (size_t i = 0; i < ringCount_; i++) {
         size_t idx = (head_ + kMaxSamples - ringCount_ + i) % kMaxSamples;
         const Sample& s = ring_[idx];
         JsonObject o = arr.add<JsonObject>();
-        o["ts"] = s.tsUptime;  // legacy
+        o["ts"] = s.tsUptime;
         o["tsUptime"] = s.tsUptime;
         if (s.tsEpoch) o["tsEpoch"] = s.tsEpoch;
         o["score"] = s.score;
@@ -131,5 +224,6 @@ void MeasSession::appendExportJson(JsonObject target) const {
         o["connected"] = (s.flags & 0x01) != 0;
         o["ownRssi"] = s.ownRssi;
         o["radioDuty"] = s.radioDuty;
+        if (s.phase[0]) o["phase"] = s.phase;
     }
 }
