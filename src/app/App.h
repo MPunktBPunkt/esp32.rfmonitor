@@ -12,6 +12,7 @@
 #include "rf/RfScanner.h"
 #include "rf/BleTracker.h"
 #include "rf/RfAnalyzer.h"
+#include "rf/SessionProfile.h"
 
 class App {
 public:
@@ -47,6 +48,8 @@ private:
     void sseSend(const String& data);
     void tickScans();
     void startRadioWorker();
+    void applySessionProfile(const SessionProfileDef& profile);
+    void restoreScanIntervals();
 
     WiFiClient sseClient_;
     TaskHandle_t radioTask_ = nullptr;
@@ -56,4 +59,10 @@ private:
     bool restartPending_ = false;
     unsigned long restartAt_ = 0;
     bool radioOnWorker_ = false;
+    // Saved scan intervals while a session profile is active.
+    bool profileOverrides_ = false;
+    uint16_t savedWifiIntervalS_ = 20;
+    uint16_t savedBleIntervalS_ = 15;
+    bool savedBleEnabled_ = true;
+    String savedOpMode_ = "normal";
 };

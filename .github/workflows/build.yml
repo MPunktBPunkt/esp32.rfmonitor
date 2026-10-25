@@ -21,6 +21,8 @@ jobs:
         run: pio test -e native
       - name: Score replay smoke
         run: python3 tools/rf-score-replay docs/evidence/2026-10-25-lab-baseline/mini-session.json --limit 5
+      - name: Score characterization sim A–G
+        run: python3 tools/rf-characterize sim
 
   firmware:
     runs-on: ubuntu-latest

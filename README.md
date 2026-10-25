@@ -1,6 +1,6 @@
 # esp32.rfmonitor
 
-![Version](https://img.shields.io/badge/version-1.8.0-blue)
+![Version](https://img.shields.io/badge/version-1.9.0-blue)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Build](https://github.com/MPunktBPunkt/esp32.rfmonitor/actions/workflows/build.yml/badge.svg)](https://github.com/MPunktBPunkt/esp32.rfmonitor/actions/workflows/build.yml)
 [![Donate](https://img.shields.io/badge/Donate-PayPal-00457C.svg?logo=paypal)](https://www.paypal.com/donate/?business=martin%40bchmnn.de&currency_code=EUR)
@@ -32,6 +32,7 @@
 - Radio Duty **5 m / 1 h / Lifetime**; „Why this score?“ in API/UI
 - Score Unit-Tests + Replay (`tools/rf-score-replay`)
 - **Channel History** + Multi-res History (Raw / 1 min / 15 min)
+- **Field Session Profiles** + Characterization-Phasen A–G
 - AP Lifetime · Event/Alert ACK/Pin · Baseline Drift
 - Operator-UI: Timeline, Findings, Why?, History-Heatmap
 - Event-Hysterese; PSRAM (S3) + Dual-Core RF-Worker (S3)
@@ -82,6 +83,7 @@ Heartbeat-Feld `fwType`: `rfmonitor`
 pio test -e native
 python3 tools/test_rf_score.py
 tools/rf-score-replay docs/evidence/2026-10-25-lab-baseline/mini-session.json
+tools/rf-characterize sim
 ```
 
 ---
@@ -94,7 +96,7 @@ tools/rf-score-replay docs/evidence/2026-10-25-lab-baseline/mini-session.json
 | `/api/rf/status` `/observations` `/snapshot` `/history` | RF (`history?res=1m\|15m`) |
 | `/api/rf/channels/history` | Channel-Druck über Zeit |
 | `/api/location/get` `/capture` `/clear` | Standort-Baseline |
-| `/api/session/start` `/stop` `/export` | Mess-Session |
+| `/api/session/profiles` `/start` `/phase` `/stop` `/export` | Mess-Session (Profile) |
 | `/api/wifi/list` `/channels` `/scan` | WLAN |
 | `/api/ble/list` `/beacons` `/scan` | BLE |
 | `/api/system/hw` | Cores / PSRAM / Caps |
