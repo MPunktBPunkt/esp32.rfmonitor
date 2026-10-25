@@ -198,6 +198,8 @@ void LocationProfile::recomputeDeviation(uint8_t score, uint8_t density, uint8_t
                                          uint8_t apCount, uint8_t bleCount, float ownRssi) {
     if (!valid_) {
         deviation_ = 0;
+        driftMag_ = 0;
+        zScore_ = zAp_ = zRssi_ = 0;
         parts_ = {};
         return;
     }
@@ -214,6 +216,16 @@ void LocationProfile::recomputeDeviation(uint8_t score, uint8_t density, uint8_t
     if (raw > 100) raw = 100;
     if (raw < -100) raw = -100;
     deviation_ = (int8_t)lroundf(raw);
+
+    // Drift = how far current sits from the captured distribution (unsigned).
+    driftMag_ = fabsf(raw);
+    auto z = [](float cur, const Stat& s) -> float {
+        float denom = s.stddev > 0.5f ? s.stddev : 0.5f;
+        return (cur - s.mean) / denom;
+    };
+    zScore_ = z((float)score, score_);
+    zAp_ = z((float)apCount, apCount_);
+    zRssi_ = z(ownRssi, ownRssi_);
 }
 
 void LocationProfile::loop(uint8_t score, uint8_t density, uint8_t pressure, uint8_t occupancy,
@@ -288,4 +300,13 @@ void LocationProfile::appendJson(JsonObject target) const {
     dp["apCount"] = parts_.apCount;
     dp["bleCount"] = parts_.bleCount;
     dp["rssi"] = parts_.rssi;
+
+    JsonObject drift = target["drift"].to<JsonObject>();
+    drift["magnitude"] = driftMag_;
+    drift["stale"] = stale();
+    drift["zScore"] = zScore_;
+    drift["zApCount"] = zAp_;
+    drift["zOwnRssi"] = zRssi_;
+    // Soft flag: outside ~2σ on score or AP, or absolute Δ large.
+    drift["elevated"] = (fabsf(zScore_) >= 2.0f) || (fabsf(zAp_) >= 2.0f) || (driftMag_ >= 20.0f);
 }
