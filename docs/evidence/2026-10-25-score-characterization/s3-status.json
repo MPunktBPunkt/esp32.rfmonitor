@@ -1,0 +1,646 @@
+{
+  "name": "PiDrive-Lab",
+  "location": "Standort",
+  "chip": "ESP32-S3",
+  "board": "esp32-s3",
+  "boardLabel": "ESP32-S3",
+  "mac": "68B6B329339C",
+  "ip": "192.168.178.88",
+  "rssi": -38,
+  "ssid": "FRITZ!Box 7490MA",
+  "channel": 6,
+  "uptime": "2h 26min",
+  "uptimeS": 8795,
+  "time": {
+    "uptimeS": 8795,
+    "timeValid": true,
+    "timestampEpochS": 1792958206
+  },
+  "heap": 180500,
+  "sketch": 1966080,
+  "hub": "192.168.178.113:8093",
+  "interval": 30,
+  "version": "1.9.0",
+  "hubOk": true,
+  "hubEnabled": true,
+  "firstRunDone": true,
+  "opMode": "normal",
+  "bleEnabled": true,
+  "hw": {
+    "cores": 2,
+    "dualCore": true,
+    "workerRunning": true,
+    "psram": true,
+    "psramSize": 2097151,
+    "psramFree": 1970995,
+    "heapFree": 180420,
+    "historyCapacity": 720,
+    "eventCapacity": 128,
+    "maxAps": 96,
+    "maxBle": 96
+  },
+  "rf": {
+    "rfScore": 89,
+    "scoreVersion": 2,
+    "scoreV1": 86,
+    "scoreV2": 89,
+    "measurementQuality": 100,
+    "locationDeviation": -6,
+    "wifiRssi": -38,
+    "wifiRssiAvg": -45.97143,
+    "wifiRssiMin": -38,
+    "wifiRssiMax": -37,
+    "wifiRssiJitter": 1,
+    "channelLoad": 16,
+    "channelCongestion": 40,
+    "channelPressureProxy": 40,
+    "channelOccupancyProxy": 16,
+    "apDensity": 28,
+    "stability": 100,
+    "disconnects": 0,
+    "radioDutyPct": 29.86241,
+    "radioDuty5mPct": 33.91417,
+    "radioDuty1hPct": 31.57074,
+    "scoreParts": {
+      "ownLink": 0,
+      "rssi": 0,
+      "jitter": 0,
+      "density": 3,
+      "pressure": 8,
+      "congestion": 8,
+      "occupancy": 0,
+      "stability": 0,
+      "disconnect": 0,
+      "qualityGate": 0
+    },
+    "why": {
+      "score": 89,
+      "scoreVersion": 2,
+      "measurementQuality": 100,
+      "locationDeviation": -6,
+      "penalties": [
+        {
+          "key": "ownLink",
+          "value": 0,
+          "proxy": false
+        },
+        {
+          "key": "jitter",
+          "value": 0,
+          "proxy": false
+        },
+        {
+          "key": "density",
+          "value": 3,
+          "proxy": true
+        },
+        {
+          "key": "pressure",
+          "value": 8,
+          "proxy": true
+        },
+        {
+          "key": "occupancy",
+          "value": 0,
+          "proxy": true
+        },
+        {
+          "key": "stability",
+          "value": 0,
+          "proxy": false
+        },
+        {
+          "key": "disconnect",
+          "value": 0,
+          "proxy": false
+        },
+        {
+          "key": "qualityGate",
+          "value": 0,
+          "proxy": false
+        }
+      ],
+      "strongestPenalty": "pressure",
+      "strongestPenaltyValue": 8
+    },
+    "apCount": 7,
+    "knownApCount": 2,
+    "unknownApCount": 5,
+    "strongestRssi": -33,
+    "scanFailCount": 0,
+    "wifiScanDurationMs": 1699,
+    "wifiScanFailRate": 0,
+    "apLife": {
+      "tracked": 7,
+      "visible": 7,
+      "new": 0,
+      "persistent": 5,
+      "flapping": 2,
+      "disappeared": 0
+    },
+    "bleCount": 6,
+    "beaconCount": 0,
+    "newBleCount": 0,
+    "bleScanDurationMs": 2000,
+    "bleScanFailRate": 0,
+    "observation": {
+      "wifi": {
+        "ownRssi": -38,
+        "connected": true,
+        "apCount": 7,
+        "knownApCount": 2,
+        "unknownApCount": 5,
+        "strongestRssi": -33,
+        "scanDurationMs": 1699,
+        "scanAgeS": 7,
+        "scanOk": true,
+        "scanAttempts": 508,
+        "scanFailures": 0,
+        "scanSuccesses": 508,
+        "failRatePct": 0,
+        "capacity": 96,
+        "apLife": {
+          "tracked": 7,
+          "visible": 7,
+          "new": 0,
+          "persistent": 5,
+          "flapping": 2,
+          "disappeared": 0
+        }
+      },
+      "ble": {
+        "deviceCount": 6,
+        "beaconCount": 0,
+        "newCount": 0,
+        "scanDurationMs": 2000,
+        "scanAgeS": 1340,
+        "scanAttempts": 508,
+        "scanFailures": 0,
+        "scanSuccesses": 374,
+        "failRatePct": 0,
+        "ready": true,
+        "capacity": 96
+      },
+      "radio": {
+        "wifiBusyMs": 863129,
+        "bleBusyMs": 1762807,
+        "dutyCyclePct": 29.86241,
+        "dutyLifetimePct": 29.86241,
+        "duty5mPct": 33.91417,
+        "duty1hPct": 31.57074,
+        "wifiScanning": false,
+        "bleScanning": true
+      },
+      "link": {
+        "rssiSampleCount": 12,
+        "rssiAvg": -45.97143,
+        "rssiJitter": 1,
+        "rssiMin": -38,
+        "rssiMax": -37,
+        "disconnects": 0,
+        "stability": 100,
+        "connected": true
+      }
+    },
+    "derived": {
+      "density": {
+        "value": 28,
+        "kind": "proxy",
+        "basis": "ap_count"
+      },
+      "channelPressure": {
+        "value": 40,
+        "kind": "proxy",
+        "basis": "max_aps_per_channel"
+      },
+      "channelOccupancy": {
+        "value": 16,
+        "kind": "proxy",
+        "basis": "occupied_2g_channels"
+      }
+    },
+    "assessment": {
+      "score": 89,
+      "scoreVersion": 2,
+      "scoreV1": 86,
+      "scoreV2": 89,
+      "measurementQuality": 100,
+      "locationDeviation": -6,
+      "scoreParts": {
+        "ownLink": 0,
+        "rssi": 0,
+        "jitter": 0,
+        "density": 3,
+        "pressure": 8,
+        "congestion": 8,
+        "occupancy": 0,
+        "stability": 0,
+        "disconnect": 0,
+        "qualityGate": 0
+      },
+      "scorePartsV1": {
+        "ownLink": 0,
+        "rssi": 0,
+        "jitter": 0,
+        "density": 4,
+        "pressure": 10,
+        "congestion": 10,
+        "occupancy": 0,
+        "stability": 0,
+        "disconnect": 0,
+        "qualityGate": 0
+      },
+      "scorePartsV2": {
+        "ownLink": 0,
+        "rssi": 0,
+        "jitter": 0,
+        "density": 3,
+        "pressure": 8,
+        "congestion": 8,
+        "occupancy": 0,
+        "stability": 0,
+        "disconnect": 0,
+        "qualityGate": 0
+      },
+      "why": {
+        "score": 89,
+        "scoreVersion": 2,
+        "measurementQuality": 100,
+        "locationDeviation": -6,
+        "penalties": [
+          {
+            "key": "ownLink",
+            "value": 0,
+            "proxy": false
+          },
+          {
+            "key": "jitter",
+            "value": 0,
+            "proxy": false
+          },
+          {
+            "key": "density",
+            "value": 3,
+            "proxy": true
+          },
+          {
+            "key": "pressure",
+            "value": 8,
+            "proxy": true
+          },
+          {
+            "key": "occupancy",
+            "value": 0,
+            "proxy": true
+          },
+          {
+            "key": "stability",
+            "value": 0,
+            "proxy": false
+          },
+          {
+            "key": "disconnect",
+            "value": 0,
+            "proxy": false
+          },
+          {
+            "key": "qualityGate",
+            "value": 0,
+            "proxy": false
+          }
+        ],
+        "strongestPenalty": "pressure",
+        "strongestPenaltyValue": 8
+      }
+    },
+    "location": {
+      "valid": true,
+      "capturing": false,
+      "captureProgressPct": 0,
+      "captureSamples": 0,
+      "captureTargetS": 300,
+      "deviation": -6,
+      "deviationVersion": 1,
+      "profileVersion": 2,
+      "stale": false,
+      "capturedAtS": 452,
+      "capturedAtUptimeS": 452,
+      "capturedAtEpochS": 1792945555,
+      "capturedTimeValid": true,
+      "sampleCount": 76,
+      "baselineAgeS": 12651,
+      "baseline": {
+        "score": 93.19736,
+        "density": 15.73684,
+        "channelPressure": 19.34211,
+        "channelOccupancy": 24,
+        "apCount": 3.934211,
+        "bleCount": 4.052631,
+        "ownRssi": -31.98684,
+        "channels": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1.934211,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ]
+      },
+      "distribution": {
+        "score": {
+          "mean": 93.19736,
+          "stddev": 0.743741,
+          "min": 93,
+          "max": 96
+        },
+        "density": {
+          "mean": 15.73684,
+          "stddev": 0.991655,
+          "min": 12,
+          "max": 16
+        },
+        "channelPressure": {
+          "mean": 19.34211,
+          "stddev": 2.479137,
+          "min": 10,
+          "max": 20
+        },
+        "channelOccupancy": {
+          "mean": 24,
+          "stddev": 0,
+          "min": 24,
+          "max": 24
+        },
+        "apCount": {
+          "mean": 3.934211,
+          "stddev": 0.247914,
+          "min": 3,
+          "max": 4
+        },
+        "bleCount": {
+          "mean": 4.052631,
+          "stddev": 0.741526,
+          "min": 2,
+          "max": 5
+        },
+        "ownRssi": {
+          "mean": -31.98684,
+          "stddev": 0.113951,
+          "min": -32,
+          "max": -31
+        }
+      },
+      "deviationParts": {
+        "score": -1.888814,
+        "density": -0.919737,
+        "pressure": -1.549342,
+        "apCount": -0.613158,
+        "bleCount": -0.194737,
+        "rssi": -0.501316
+      },
+      "drift": {
+        "magnitude": 5.667104,
+        "stale": false,
+        "zScore": -5.643582,
+        "zApCount": 6.131579,
+        "zOwnRssi": -10.02632,
+        "elevated": true
+      }
+    },
+    "session": {
+      "active": false,
+      "label": "char-2026-10-25-s3",
+      "profile": "characterization",
+      "profileTitle": "Score Characterization",
+      "durationS": 0,
+      "wifiScanIntervalS": 10,
+      "bleScanIntervalS": 8,
+      "bleEnabled": true,
+      "characterization": true,
+      "phase": "",
+      "startS": 7584,
+      "endS": 8795,
+      "startEpochS": 1792956996,
+      "endEpochS": 1792958206,
+      "timeValid": true,
+      "sampleCount": 302,
+      "ringCount": 150,
+      "ringCapacity": 150,
+      "warnEvents": 0,
+      "errorEvents": 0,
+      "avgScore": 91.08940397,
+      "avgQuality": 100,
+      "avgDeviation": -3.582781457,
+      "minScore": 89,
+      "maxScore": 95,
+      "minQuality": 100,
+      "maxQuality": 100
+    },
+    "findings": [
+      {
+        "level": "ok",
+        "code": "wifi.own_ok",
+        "text": "Eigenes WLAN verbunden"
+      },
+      {
+        "level": "ok",
+        "code": "wifi.rssi_ok",
+        "text": "Eigenes RSSI im Rahmen"
+      },
+      {
+        "level": "ok",
+        "code": "rf.pressure_ok",
+        "text": "Kanaldruck-Proxy normal"
+      },
+      {
+        "level": "ok",
+        "code": "meas.quality_ok",
+        "text": "Messqualitaet ok"
+      },
+      {
+        "level": "ok",
+        "code": "loc.dev_ok",
+        "text": "Lage nahe Standortnormal"
+      },
+      {
+        "level": "info",
+        "code": "wifi.unknown_aps",
+        "text": "5 unbekannte APs"
+      },
+      {
+        "level": "info",
+        "code": "wifi.ap_life",
+        "text": "APs new 0 \u00b7 flap 2 \u00b7 gone 0"
+      }
+    ],
+    "alert": {
+      "contract": "rfmonitor-hub-v2",
+      "any": false,
+      "flags": {
+        "score_low": false,
+        "channel_pressure_high": false,
+        "data_quality_low": false,
+        "radio_budget_high": false,
+        "baseline_deviation": false,
+        "wifi_disconnected": false
+      },
+      "conditions": {
+        "score_low": {
+          "code": "score_low",
+          "state": "inactive",
+          "active": false,
+          "acked": false,
+          "activeForMs": 0
+        },
+        "channel_pressure_high": {
+          "code": "channel_pressure_high",
+          "state": "inactive",
+          "active": false,
+          "acked": false,
+          "activeForMs": 0
+        },
+        "data_quality_low": {
+          "code": "data_quality_low",
+          "state": "inactive",
+          "active": false,
+          "acked": false,
+          "activeForMs": 0
+        },
+        "radio_budget_high": {
+          "code": "radio_budget_high",
+          "state": "inactive",
+          "active": false,
+          "acked": false,
+          "activeForMs": 0
+        },
+        "baseline_deviation": {
+          "code": "baseline_deviation",
+          "state": "inactive",
+          "active": false,
+          "acked": false,
+          "activeForMs": 0
+        }
+      }
+    }
+  },
+  "ios": {
+    "wifi_rssi": {
+      "type": "sensor",
+      "value": -38,
+      "unit": "dBm"
+    },
+    "wifi_rssi_avg": {
+      "type": "sensor",
+      "value": -45.97143,
+      "unit": "dBm"
+    },
+    "wifi_rssi_jitter": {
+      "type": "sensor",
+      "value": 1,
+      "unit": "dB"
+    },
+    "rf_score": {
+      "type": "sensor",
+      "value": 89,
+      "unit": ""
+    },
+    "rf_score_v1": {
+      "type": "sensor",
+      "value": 86,
+      "unit": ""
+    },
+    "rf_score_v2": {
+      "type": "sensor",
+      "value": 89,
+      "unit": ""
+    },
+    "rf_score_version": {
+      "type": "sensor",
+      "value": 2,
+      "unit": ""
+    },
+    "measurement_quality": {
+      "type": "sensor",
+      "value": 100,
+      "unit": ""
+    },
+    "location_deviation": {
+      "type": "sensor",
+      "value": -6,
+      "unit": ""
+    },
+    "ap_count": {
+      "type": "sensor",
+      "value": 7,
+      "unit": ""
+    },
+    "ble_count": {
+      "type": "sensor",
+      "value": 6,
+      "unit": ""
+    },
+    "beacon_count": {
+      "type": "sensor",
+      "value": 0,
+      "unit": ""
+    },
+    "channel_load": {
+      "type": "sensor",
+      "value": 16,
+      "unit": ""
+    },
+    "channel_pressure_proxy": {
+      "type": "sensor",
+      "value": 40,
+      "unit": ""
+    },
+    "scan_fail_count": {
+      "type": "sensor",
+      "value": 0,
+      "unit": ""
+    },
+    "radio_duty_pct": {
+      "type": "sensor",
+      "value": 29.86241,
+      "unit": "%"
+    },
+    "radio_duty_5m_pct": {
+      "type": "sensor",
+      "value": 33.91417,
+      "unit": "%"
+    },
+    "radio_duty_1h_pct": {
+      "type": "sensor",
+      "value": 31.57074,
+      "unit": "%"
+    },
+    "alert_any": {
+      "type": "sensor",
+      "value": 0,
+      "unit": ""
+    },
+    "alert_score_low": {
+      "type": "sensor",
+      "value": 0,
+      "unit": ""
+    },
+    "alert_pressure_high": {
+      "type": "sensor",
+      "value": 0,
+      "unit": ""
+    },
+    "alert_quality_low": {
+      "type": "sensor",
+      "value": 0,
+      "unit": ""
+    }
+  }
+}

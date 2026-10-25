@@ -1,0 +1,9 @@
+# session=s3-session.json profile=characterization phases=7 samples=150
+A  SKIP (no samples)
+B  SKIP (no samples)
+C  SKIP (no samples)
+D  replay_v2=89 base=89 device_avg=89.0 n=31 FAIL  (more occupied channels)
+E  replay_v2=89 base=89 device_avg=89.0 n=41 FAIL  (WLAN disconnect)
+F  replay_v2=90 base=89 device_avg=89.2 n=37 OK  (stabilize jitter)
+G  replay_v2=89 base=89 device_avg=89.1 n=41 OK  (return to baseline)
+# result: FAIL (2 failed)

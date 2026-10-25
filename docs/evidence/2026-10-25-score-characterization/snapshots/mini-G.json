@@ -1,0 +1,294 @@
+{
+  "kind": "coexistence_snapshot",
+  "fwVersion": "1.9.0",
+  "scoreVersion": 2,
+  "board": "esp32-mini",
+  "location": "Standort",
+  "timestampS": 8651,
+  "time": {
+    "uptimeS": 8651,
+    "timeValid": true,
+    "timestampEpochS": 1792958044
+  },
+  "rfScore": 92,
+  "scoreV1": 90,
+  "scoreV2": 92,
+  "measurementQuality": 90,
+  "locationDeviation": 0,
+  "channelPressure": 30,
+  "channelOccupancy": 16,
+  "density": 20,
+  "radioDutyPct": 36.81102,
+  "radioDuty5mPct": 41.51389,
+  "radioDuty1hPct": 41.42415,
+  "why": {
+    "score": 92,
+    "scoreVersion": 2,
+    "measurementQuality": 90,
+    "locationDeviation": 0,
+    "penalties": [
+      {
+        "key": "ownLink",
+        "value": 0,
+        "proxy": false
+      },
+      {
+        "key": "jitter",
+        "value": 0,
+        "proxy": false
+      },
+      {
+        "key": "density",
+        "value": 2,
+        "proxy": true
+      },
+      {
+        "key": "pressure",
+        "value": 6,
+        "proxy": true
+      },
+      {
+        "key": "occupancy",
+        "value": 0,
+        "proxy": true
+      },
+      {
+        "key": "stability",
+        "value": 0,
+        "proxy": false
+      },
+      {
+        "key": "disconnect",
+        "value": 0,
+        "proxy": false
+      },
+      {
+        "key": "qualityGate",
+        "value": 0,
+        "proxy": false
+      }
+    ],
+    "strongestPenalty": "pressure",
+    "strongestPenaltyValue": 6
+  },
+  "wifi": {
+    "apCount": 5,
+    "knownApCount": 1,
+    "ownRssi": -46,
+    "ssid": "FRITZ!Box 7490MA",
+    "channel": 6,
+    "channels": [
+      {
+        "ch": 1,
+        "count": 2,
+        "maxRssi": -90,
+        "avgRssi": -90,
+        "known": 0,
+        "unknown": 2,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 2,
+        "disappeared": 2,
+        "pressure": "low"
+      },
+      {
+        "ch": 2,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 3,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 4,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 5,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 6,
+        "count": 3,
+        "maxRssi": -53,
+        "avgRssi": -57,
+        "known": 1,
+        "unknown": 2,
+        "new": 0,
+        "persistent": 2,
+        "flapping": 1,
+        "disappeared": 0,
+        "pressure": "low"
+      },
+      {
+        "ch": 7,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 8,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 9,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 10,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 11,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 12,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 13,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 14,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      }
+    ]
+  },
+  "ble": {
+    "deviceCount": 0,
+    "beaconCount": 0
+  },
+  "hw": {
+    "cores": 2,
+    "dualCore": false,
+    "workerRunning": false,
+    "psram": false,
+    "psramSize": 0,
+    "psramFree": 0,
+    "heapFree": 86636,
+    "historyCapacity": 72,
+    "eventCapacity": 32,
+    "maxAps": 24,
+    "maxBle": 24
+  },
+  "locationProfile": {
+    "valid": false,
+    "capturing": false,
+    "captureProgressPct": 0,
+    "captureSamples": 0,
+    "captureTargetS": 300,
+    "deviation": 0,
+    "deviationVersion": 1,
+    "profileVersion": 2,
+    "stale": false
+  },
+  "name": "Network Scanner"
+}

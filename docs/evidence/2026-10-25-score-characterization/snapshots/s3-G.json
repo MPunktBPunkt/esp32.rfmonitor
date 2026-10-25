@@ -1,0 +1,385 @@
+{
+  "kind": "coexistence_snapshot",
+  "fwVersion": "1.9.0",
+  "scoreVersion": 2,
+  "board": "esp32-s3",
+  "location": "Standort",
+  "timestampS": 8632,
+  "time": {
+    "uptimeS": 8632,
+    "timeValid": true,
+    "timestampEpochS": 1792958044
+  },
+  "rfScore": 89,
+  "scoreV1": 86,
+  "scoreV2": 89,
+  "measurementQuality": 100,
+  "locationDeviation": -6,
+  "channelPressure": 40,
+  "channelOccupancy": 16,
+  "density": 28,
+  "radioDutyPct": 29.74429,
+  "radioDuty5mPct": 35.97222,
+  "radioDuty1hPct": 31.35519,
+  "why": {
+    "score": 89,
+    "scoreVersion": 2,
+    "measurementQuality": 100,
+    "locationDeviation": -6,
+    "penalties": [
+      {
+        "key": "ownLink",
+        "value": 0,
+        "proxy": false
+      },
+      {
+        "key": "jitter",
+        "value": 0,
+        "proxy": false
+      },
+      {
+        "key": "density",
+        "value": 3,
+        "proxy": true
+      },
+      {
+        "key": "pressure",
+        "value": 8,
+        "proxy": true
+      },
+      {
+        "key": "occupancy",
+        "value": 0,
+        "proxy": true
+      },
+      {
+        "key": "stability",
+        "value": 0,
+        "proxy": false
+      },
+      {
+        "key": "disconnect",
+        "value": 0,
+        "proxy": false
+      },
+      {
+        "key": "qualityGate",
+        "value": 0,
+        "proxy": false
+      }
+    ],
+    "strongestPenalty": "pressure",
+    "strongestPenaltyValue": 8
+  },
+  "wifi": {
+    "apCount": 7,
+    "knownApCount": 2,
+    "ownRssi": -38,
+    "ssid": "FRITZ!Box 7490MA",
+    "channel": 6,
+    "channels": [
+      {
+        "ch": 1,
+        "count": 4,
+        "maxRssi": -71,
+        "avgRssi": -72,
+        "known": 1,
+        "unknown": 3,
+        "new": 0,
+        "persistent": 3,
+        "flapping": 1,
+        "disappeared": 0,
+        "pressure": "medium"
+      },
+      {
+        "ch": 2,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 3,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 4,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 5,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 6,
+        "count": 3,
+        "maxRssi": -33,
+        "avgRssi": -40,
+        "known": 1,
+        "unknown": 2,
+        "new": 0,
+        "persistent": 2,
+        "flapping": 1,
+        "disappeared": 0,
+        "pressure": "low"
+      },
+      {
+        "ch": 7,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 8,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 9,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 10,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 11,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 12,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 13,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      },
+      {
+        "ch": 14,
+        "count": 0,
+        "maxRssi": 0,
+        "avgRssi": 0,
+        "known": 0,
+        "unknown": 0,
+        "new": 0,
+        "persistent": 0,
+        "flapping": 0,
+        "disappeared": 0,
+        "pressure": "none"
+      }
+    ]
+  },
+  "ble": {
+    "deviceCount": 8,
+    "beaconCount": 0
+  },
+  "hw": {
+    "cores": 2,
+    "dualCore": true,
+    "workerRunning": true,
+    "psram": true,
+    "psramSize": 2097151,
+    "psramFree": 1970995,
+    "heapFree": 176968,
+    "historyCapacity": 720,
+    "eventCapacity": 128,
+    "maxAps": 96,
+    "maxBle": 96
+  },
+  "locationProfile": {
+    "valid": true,
+    "capturing": false,
+    "captureProgressPct": 0,
+    "captureSamples": 0,
+    "captureTargetS": 300,
+    "deviation": -6,
+    "deviationVersion": 1,
+    "profileVersion": 2,
+    "stale": false,
+    "capturedAtS": 452,
+    "capturedAtUptimeS": 452,
+    "capturedAtEpochS": 1792945555,
+    "capturedTimeValid": true,
+    "sampleCount": 76,
+    "baselineAgeS": 12489,
+    "baseline": {
+      "score": 93.19736,
+      "density": 15.73684,
+      "channelPressure": 19.34211,
+      "channelOccupancy": 24,
+      "apCount": 3.934211,
+      "bleCount": 4.052631,
+      "ownRssi": -31.98684,
+      "channels": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        1.934211,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    "distribution": {
+      "score": {
+        "mean": 93.19736,
+        "stddev": 0.743741,
+        "min": 93,
+        "max": 96
+      },
+      "density": {
+        "mean": 15.73684,
+        "stddev": 0.991655,
+        "min": 12,
+        "max": 16
+      },
+      "channelPressure": {
+        "mean": 19.34211,
+        "stddev": 2.479137,
+        "min": 10,
+        "max": 20
+      },
+      "channelOccupancy": {
+        "mean": 24,
+        "stddev": 0,
+        "min": 24,
+        "max": 24
+      },
+      "apCount": {
+        "mean": 3.934211,
+        "stddev": 0.247914,
+        "min": 3,
+        "max": 4
+      },
+      "bleCount": {
+        "mean": 4.052631,
+        "stddev": 0.741526,
+        "min": 2,
+        "max": 5
+      },
+      "ownRssi": {
+        "mean": -31.98684,
+        "stddev": 0.113951,
+        "min": -32,
+        "max": -31
+      }
+    },
+    "deviationParts": {
+      "score": -1.888814,
+      "density": -0.919737,
+      "pressure": -1.549342,
+      "apCount": -0.613158,
+      "bleCount": -0.394737,
+      "rssi": -0.601316
+    },
+    "drift": {
+      "magnitude": 5.967103,
+      "stale": false,
+      "zScore": -5.643582,
+      "zApCount": 6.131579,
+      "zOwnRssi": -12.02632,
+      "elevated": true
+    }
+  },
+  "name": "PiDrive-Lab"
+}
