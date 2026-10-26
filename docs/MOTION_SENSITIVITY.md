@@ -13,21 +13,23 @@
 | Own-Link RSSI | alle **200 ms** → Ring Mini 900 / S3 1500 |
 | WiFi-/BLE-Scan | praktisch pausiert (600 s / BLE aus) |
 | Score | weiter alle 4 s (unverändert) |
-| Phasen | **R0–R4** |
+| Phasen | **CAL** · **W1** · **W2** (optional) |
 
-Export: `motionRssi.samples` = `[uptimeMs, rssi, phaseIdx, connected]`.
+Export: `motionRssi.samples` = `[uptimeMs, rssi, phaseIdx, connected]`.  
+Live-UI: `/api/session/motion?n=300` (letzte N Samples, kein Full-Export).  
+Leichter Export: `/api/session/export?motion=0` (nur Phase-Aggregates).
 
-## Protokoll
+## Protokoll (Standard)
 
 | Phase | Dauer (empfohlen) | Aktion |
 |-------|-------------------|--------|
-| R0 | 45–60 s | Still sitzen/stehen |
-| R1 | 45–60 s | Am ESP vorbei und zurück |
-| R2 | 45–60 s | Wieder still |
-| R3 | 45–60 s | Zweiter Durchgang |
-| R4 | 45–60 s | Still |
+| **CAL** | 45–60 s | Still — **eine** Ruhekalibrierung (σ / Mittelwert) |
+| **W1** | 45–60 s | Am ESP vorbei und zurück |
+| **W2** | 45–60 s | Optionaler zweiter Durchgang (Repeatability) |
 
-Optional später: Körper ohne Handy / Idle-Handy / Traffic-Handy trennen.
+**Eine Ruhephase reicht.** Excursion und SNR_motion beziehen sich auf CAL. Früheres R0/R2/R4 war nur Charakterisierungs-Robustheit (Drift zwischen Walk-bys) — für den Küchenlauf unnötig.
+
+Legacy-IDs R0–R4 werden von `rf-motion-characterize` weiterhin akzeptiert.
 
 ## Auswertung
 
@@ -36,7 +38,7 @@ tools/rf-motion-characterize docs/evidence/.../mini-session.json \
                              docs/evidence/.../s3-session.json
 ```
 
-Liefert u. a. Rest-σ, Walk-by max |Δ|, SNR_motion ≈ excursion/σ, Repeatability R1↔R3, Mini↔S3-Hinweis (gemeinsam vs. pfadlokal).
+Liefert u. a. Ruhe-σ (CAL), Walk-by max |Δ|, SNR_motion ≈ excursion/σ, Repeatability W1↔W2, Mini↔S3-Hinweis.
 
 ## Audit-Framing
 

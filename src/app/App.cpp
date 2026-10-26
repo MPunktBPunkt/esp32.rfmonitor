@@ -2,6 +2,7 @@
 #include "core/HwCaps.h"
 #include "core/NetUtil.h"
 #include "core/TimeBase.h"
+#include "rf/MeasSession.h"
 #include "web/UiPages.h"
 #include <WiFi.h>
 #include <WiFiManager.h>
@@ -376,9 +377,39 @@ void App::registerRoutes() {
         events.info("session.stop", "Mess-Session gestoppt", "");
         NetUtil::sendJson(server, 200, resp);
     });
-    server.on("/api/session/export", HTTP_GET, [this]() {
+    server.on("/api/session/motion", HTTP_GET, [this]() {
+        size_t n = 300;
+        if (server.hasArg("n")) {
+            long v = server.arg("n").toInt();
+            if (v < 10) v = 10;
+            if (v > (long)MeasSession::kMaxMotionRssi) v = (long)MeasSession::kMaxMotionRssi;
+            n = (size_t)v;
+        }
         JsonDocument doc;
-        analyzer.session().appendExportJson(doc.to<JsonObject>());
+        analyzer.session().appendMotionLiveJson(doc.to<JsonObject>(), n);
+        NetUtil::sendJson(server, 200, doc);
+    });
+    server.on("/api/rf/ownlink", HTTP_GET, [this]() {
+        size_t n = 300;
+        if (server.hasArg("n")) {
+            long v = server.arg("n").toInt();
+            if (v < 10) v = 10;
+            if (v > 300) v = 300;
+            n = (size_t)v;
+        }
+        JsonDocument doc;
+        analyzer.appendOwnLinkFineJson(doc.to<JsonObject>(), n);
+        NetUtil::sendJson(server, 200, doc);
+    });
+    server.on("/api/session/export", HTTP_GET, [this]() {
+        // ?motion=0 omits the high-rate sample ring (phase aggregates remain).
+        bool includeMotion = true;
+        if (server.hasArg("motion")) {
+            String m = server.arg("motion");
+            includeMotion = !(m == "0" || m == "false" || m == "no");
+        }
+        JsonDocument doc;
+        analyzer.session().appendExportJson(doc.to<JsonObject>(), includeMotion);
         doc["name"] = config.deviceName;
         doc["location"] = config.locationName;
         analyzer.location().appendJson(doc["locationProfile"].to<JsonObject>());

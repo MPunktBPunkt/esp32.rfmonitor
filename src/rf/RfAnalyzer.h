@@ -41,6 +41,7 @@ public:
     const MeasSession& session() const { return session_; }
 
     void appendStatusJson(JsonObject target) const;
+    void appendOwnLinkFineJson(JsonObject target, size_t maxSamples = 300) const;
     void appendObservationJson(JsonObject target) const;
     void appendSnapshotJson(JsonObject target) const;
     void appendFindingsJson(JsonArray arr) const;
@@ -123,6 +124,20 @@ private:
     wl_status_t lastWifi_ = WL_IDLE_STATUS;
     int8_t lastRssi_ = 0;
     bool hubWasOk_ = true;
+
+    // Always-on fine own-link ring for UI (200 ms) — independent of motion session.
+    static constexpr size_t kFineRssiCap = 300;  // 60 s
+    static constexpr uint16_t kFineRssiIntervalMs = 200;
+    struct __attribute__((packed)) FineRssiSample {
+        uint32_t uptimeMs;
+        int8_t rssi;
+        uint8_t flags;  // bit0 connected
+    };
+    FineRssiSample fineRssi_[kFineRssiCap];
+    size_t fineHead_ = 0;
+    size_t fineCount_ = 0;
+    uint32_t fineTotal_ = 0;
+    void noteFineRssi(int8_t rssi, bool connected);
     Hyst hystScore_;
     Hyst hystPressure_;
     Hyst hystQuality_;

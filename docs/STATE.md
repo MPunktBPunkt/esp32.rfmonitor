@@ -2,17 +2,29 @@
 
 | | |
 |--|--|
-| Version | **1.10.0** (Motion Sensitivity session) |
+| Version | **1.10.2** (Own-Link fein Δ-Chart always-on) |
 | Lab | Mini `.87` + S3 `.88` |
-| Evidence | [lab-baseline](evidence/2026-10-25-lab-baseline/) · [kitchen](evidence/2026-10-25-kitchen-side-by-side/) · [kitchen-idle](evidence/2026-10-25-kitchen-baseline-idle/) · [char A–G](evidence/2026-10-25-score-characterization/) |
+| Evidence | [lab](evidence/2026-10-25-lab-baseline/) · [kitchen](evidence/2026-10-25-kitchen-side-by-side/) · [idle](evidence/2026-10-25-kitchen-baseline-idle/) · [char A–G](evidence/2026-10-25-score-characterization/) · [motion](evidence/2026-10-26-kitchen-motion/) · [ruhe2](evidence/2026-10-26-kitchen-ruhe2/) · [walkby](evidence/2026-10-26-kitchen-walkby/) |
 | Hub | [HUB_CONTRACT.md](HUB_CONTRACT.md) |
+
+## Erledigt in 1.10.2
+
+- Own-Link fein immer sichtbar (200 ms Ring) · Δ-dB-Zoom (±4 dB) · `/api/rf/ownlink`
+- Toggle Δ / absolut; σ-Band + ±2 dB-Hilfslinien
+- Küchen-Evidence: Ruhe #2 + Walk-by (max |Δ| ≈ 2 dB, SNR > 5)
+
+## Erledigt in 1.10.1
+
+- Live-Chart Own-Link Motion + `/api/session/motion`
+- Phasen **CAL** · **W1** · **W2** optional (eine Ruhekalibrierung reicht)
+- Export `?motion=0` ohne Sample-Ring
+- `rf-motion-characterize` CAL/W1/W2 (+ Legacy R0–R4)
 
 ## Erledigt in 1.10.0
 
-- Session-Profil **`motion`**: 200 ms Own-Link-RSSI, Scans pausiert, Phasen R0–R4
-- Motion-Ring Mini 900 / S3 1500; Phase-Motion-Stats im Export
-- `tools/rf-motion-characterize` (σ, excursion, SNR, Repeatability, Mini↔S3)
-- Doc: [MOTION_SENSITIVITY.md](MOTION_SENSITIVITY.md)
+- Session-Profil **`motion`**: 200 ms Own-Link-RSSI, Scans pausiert
+- Motion-Ring Mini 900 / S3 1500; Phase-Motion-Stats
+- `tools/rf-motion-characterize` · [MOTION_SENSITIVITY.md](MOTION_SENSITIVITY.md)
 
 ## Erledigt in 1.9.1
 
@@ -22,9 +34,9 @@
 
 ## Als Nächstes
 
-- [ ] Motion-Sensitivity-Lauf Mini+S3 (R0–R4), Evidence-Pack — Ruhe-σ Küche ok (Mini 0.67 / S3 0.26 dB)
 - [ ] Mini↔S3 Score-Nachlauf / Drift
 - [ ] ioBroker Hub Contract v2 Consumer
+- [ ] Optional: Motion-Export streaming (große Ringe ohne HTTP-Stall)
 
 ## Bewusst zurückgestellt
 

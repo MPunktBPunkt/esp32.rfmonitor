@@ -1,6 +1,6 @@
 # esp32.rfmonitor
 
-![Version](https://img.shields.io/badge/version-1.10.0-blue)
+![Version](https://img.shields.io/badge/version-1.10.2-blue)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Build](https://github.com/MPunktBPunkt/esp32.rfmonitor/actions/workflows/build.yml/badge.svg)](https://github.com/MPunktBPunkt/esp32.rfmonitor/actions/workflows/build.yml)
 [![Donate](https://img.shields.io/badge/Donate-PayPal-00457C.svg?logo=paypal)](https://www.paypal.com/donate/?business=martin%40bchmnn.de&currency_code=EUR)
@@ -19,8 +19,9 @@
 | Infrastruktur-Scanner | Paket-Sniffer |
 | Live-Status + History | Presence-System mit Raumgenauigkeit |
 | Hub-Telemetrie | Ersatz für `toolnode` |
+| Own-Link-Feinsignal (Walk-by) | CSI / Personenzählung |
 
-**Aktuell:** Firmware **1.10.0** · Lab Mini `192.168.178.87` · S3 `192.168.178.88` · Stand [docs/STATE.md](docs/STATE.md)
+**Aktuell:** Firmware **1.10.2** · Lab Mini `192.168.178.87` · S3 `192.168.178.88` · Stand [docs/STATE.md](docs/STATE.md)
 
 ---
 
@@ -35,10 +36,11 @@
 - **Channel History** + Multi-res History (Raw / 1 min / 15 min) + Baseline Drift
 - **Field Session Profiles** (`field` / `characterization` / `motion` / `quick` / `diagnose`)
 - Characterization-Phasen **A–G** inkl. **Phase-Aggregates** (überleben Ring-Wrap)
-- **Motion Sensitivity**: 200 ms Own-Link-RSSI, Phasen **R0–R4** (kein Presence-Claim)
-- Session-Ring Score **180/300**; Motion-RSSI **900/1500**
+- **Own-Link fein** (always-on, 200 ms): Live-Chart mit **Δ-dB-Zoom**, Toggle absolut/Δ
+- **Motion Sensitivity**: Session **CAL → W1 → W2?** (eine Ruhekalibrierung reicht; kein Presence-Claim)
+- Session-Ring Score **180/300**; Motion-RSSI **900/1500**; Fine-Ring **300** (60 s)
 - AP Lifetime · Event/Alert ACK/Pin
-- Operator-UI: Timeline, Findings, Why?, History-Heatmap
+- Operator-UI: Timeline, Findings, Why?, History-Heatmap, Own-Link-Feinchart
 - SSE, Web-OTA, Betriebsmodi Live/Normal/Diagnose
 - Host-Tools: Score-Tests, Replay, Characterization, Motion-Characterize
 
@@ -67,6 +69,8 @@ pio device monitor
 3. Web-OTA: `/ota` bzw. `POST /ota-upload`  
 4. Gerät erscheint im [ESP-Hub](https://github.com/MPunktBPunkt/iobroker.esp-hub)
 
+**Motion-Kurzlauf:** RF-Tab → Session-Profil `motion` → **Ruhe** (45–60 s) → **Bewegung** → Stop/Export. Live-Δ-Chart zeigt Abweichungen vom Ruheband ohne Extra-Session.
+
 ---
 
 ## Hub-IO-Werte
@@ -84,10 +88,12 @@ Heartbeat: `fwType` = `rfmonitor`, Nested-Objekt `rf` nach [Hub Contract v2](doc
 | [docs/RF_SCORE.md](docs/RF_SCORE.md) | Score v1+v2 |
 | [docs/OBSERVATION_MODEL.md](docs/OBSERVATION_MODEL.md) | Observation-Modell |
 | [docs/LOCATION_PROFILE.md](docs/LOCATION_PROFILE.md) | Standort-Baseline |
-| [docs/SCORE_CHARACTERIZATION.md](docs/SCORE_CHARACTERIZATION.md) | Protokoll A–G (stark stimulieren, 45–60 s/Phase) |
-| [docs/MOTION_SENSITIVITY.md](docs/MOTION_SENSITIVITY.md) | Own-Link Walk-by / RF-Sensitivität (R0–R4) |
+| [docs/SCORE_CHARACTERIZATION.md](docs/SCORE_CHARACTERIZATION.md) | Protokoll A–G |
+| [docs/MOTION_SENSITIVITY.md](docs/MOTION_SENSITIVITY.md) | Own-Link Walk-by · CAL/W1/W2 |
 | [docs/STATE.md](docs/STATE.md) | Projektstand / Next |
-| [docs/evidence/](docs/evidence/) | Lab-, Kitchen-, Characterization-Packs |
+| [docs/evidence/](docs/evidence/) | Lab-, Kitchen-, Motion-, Characterization-Packs |
+
+Küche 2026-10-26 (1.10.x): Ruhe-σ Mini ≈ 0.4 dB / S3 ≈ 0.14 dB; dichter Walk-by max |Δ| ≈ 2 dB (SNR > 5) — siehe `docs/evidence/2026-10-26-kitchen-*`.
 
 ```bash
 pio test -e native
@@ -95,7 +101,9 @@ python3 tools/test_rf_score.py
 tools/rf-score-replay docs/evidence/2026-10-25-lab-baseline/mini-session.json
 tools/rf-characterize sim
 tools/rf-characterize session docs/evidence/2026-10-25-score-characterization/s3-session.json
-tools/rf-motion-characterize docs/evidence/.../mini-session.json docs/evidence/.../s3-session.json
+tools/rf-motion-characterize \
+  docs/evidence/2026-10-26-kitchen-ruhe2/mini-session.json \
+  docs/evidence/2026-10-26-kitchen-ruhe2/s3-session.json
 ```
 
 ---
@@ -106,10 +114,13 @@ tools/rf-motion-characterize docs/evidence/.../mini-session.json docs/evidence/.
 |----------|----------|
 | `/api/status` | Gesamtstatus inkl. `hw` + Observation |
 | `/api/rf/status` `/observations` `/snapshot` `/score` | RF Live |
+| `/api/rf/ownlink?n=300` | Always-on Fine-RSSI (200 ms, letzte N Samples) |
 | `/api/rf/history?res=raw\|1m\|15m` | Multi-res History |
 | `/api/rf/channels/history` | Channel-Druck über Zeit |
 | `/api/location/get` `/capture` `/clear` | Standort-Baseline |
-| `/api/session/profiles` `/start` `/phase` `/stop` `/export` | Mess-Session (Profile + Phasen A–G) |
+| `/api/session/profiles` `/start` `/phase` `/stop` `/export` | Mess-Session |
+| `/api/session/motion?n=300` | Live Motion-Ring + Phasen (Profil `motion`) |
+| `/api/session/export?motion=0` | Export ohne Motion-Sample-Ring (nur Aggregates) |
 | `/api/wifi/list` `/channels` `/scan` | WLAN |
 | `/api/ble/list` `/beacons` `/scan` | BLE |
 | `/api/events/recent` `/ack` `/pin` · `/api/alerts/ack` | Events / Alerts |

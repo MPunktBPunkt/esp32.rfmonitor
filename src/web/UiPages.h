@@ -187,6 +187,19 @@ tr.own{background:rgba(45,212,168,.08)}
   </div>
 
   <div class="pane" id="pane-rf">
+    <div class="panel" id="motion-panel">
+      <h3>Own-Link fein <span class="meta" id="motion-title-meta">(200 ms · Δ zur Baseline)</span></h3>
+      <div class="meta" id="motion-meta">live Own-Link</div>
+      <div class="row" style="margin:8px 0;align-items:center">
+        <div class="seg" id="motion-scale">
+          <button type="button" class="on" data-mode="delta" onclick="setMotionMode('delta')">Δ dB</button>
+          <button type="button" data-mode="abs" onclick="setMotionMode('abs')">absolut</button>
+        </div>
+        <span class="meta" id="motion-zoom-hint">Zoom ±4 dB um Baseline</span>
+      </div>
+      <div class="kpi-grid" id="motion-kpis" style="margin:10px 0"></div>
+      <canvas id="c-motion" style="height:200px"></canvas>
+    </div>
     <div class="grid2">
       <div class="panel"><h3>WLAN RSSI (dBm)</h3><canvas id="c-rssi"></canvas></div>
       <div class="panel"><h3>RF-Score</h3><canvas id="c-score"></canvas></div>
@@ -243,13 +256,12 @@ tr.own{background:rgba(45,212,168,.08)}
             <button class="btn" onclick="sessPhase('G','baseline')">G</button>
           </span>
           <span id="sess-phases-motion" style="display:none">
-            <button class="btn" onclick="sessPhase('R0','stationary baseline')">R0</button>
-            <button class="btn" onclick="sessPhase('R1','walk-by #1')">R1</button>
-            <button class="btn" onclick="sessPhase('R2','stationary')">R2</button>
-            <button class="btn" onclick="sessPhase('R3','walk-by #2')">R3</button>
-            <button class="btn" onclick="sessPhase('R4','stationary')">R4</button>
+            <button class="btn" onclick="sessPhase('CAL','rest calibration')">Ruhe</button>
+            <button class="btn" onclick="sessPhase('W1','walk-by #1')">Bewegung</button>
+            <button class="btn" onclick="sessPhase('W2','walk-by #2')">Wiederholung</button>
           </span>
         </div>
+        <div class="meta" id="sess-motion-hint" style="display:none;margin-top:8px">1× Ruhe (45–60 s) reicht als Kalibrierung · dann Bewegung · Wiederholung optional</div>
         <button class="btn btn-a" onclick="sessStart()">Start</button>
         <button class="btn" onclick="sessStop()">Stop</button>
         <button class="btn" onclick="sessExport()">Export JSON</button>
@@ -410,6 +422,10 @@ let lastChannels=[];
 let lastAps=[];
 let ownSsid='';
 let lastEvents=[];
+let motionPoll=null;
+let lastMotion=null;
+let motionMode='delta'; // delta | abs
+const MOTION_DELTA_MIN_DB=4; // ± half-span minimum so ~2 dB walks fill the chart
 try{const s=JSON.parse(localStorage.getItem('rfmon-ev')||'{}'); if(s.type!=null) setTimeout(()=>{if($('ev-type'))$('ev-type').value=s.type; if($('ev-lvl')&&s.lvl!=null)$('ev-lvl').value=s.lvl},0)}catch(e){}
 
 function drawLine(id,series,color,min,max){
@@ -528,6 +544,7 @@ function renderHeat(channels){
   }).join('');
 }
 function applyStatus(s){
+  window._lastStatus=s;
   ownSsid=s.ssid||ownSsid||'';
   $('h-name').textContent=s.name||'RF Monitor';
   $('h-ver').innerHTML='v<b>'+(s.version||'')+'</b>';
@@ -596,9 +613,10 @@ function applyStatus(s){
   const mot=!!sess.motionSensitivity;
   if($('sess-phases-score')) $('sess-phases-score').style.display=mot?'none':'inline';
   if($('sess-phases-motion')) $('sess-phases-motion').style.display=mot?'inline':'none';
+  if($('sess-motion-hint')) $('sess-motion-hint').style.display=(sess.active&&mot)?'block':'none';
+  ensureMotionPoll(true);
   if(sess.active&&mot){
     const mr=sess.motionRssiCount!=null?(' · motionRSSI '+sess.motionRssiCount+'/'+(sess.motionRssiCapacity||'?')):'';
-    /* appended below with phase */
     window._motionHint=mr;
   } else window._motionHint='';
   if(sess.active){
@@ -835,6 +853,163 @@ function sessProfileChanged(){
   const mot=p==='motion';
   if($('sess-phases-score')) $('sess-phases-score').style.display=mot?'none':'inline';
   if($('sess-phases-motion')) $('sess-phases-motion').style.display=mot?'inline':'none';
+  if($('sess-motion-hint')) $('sess-motion-hint').style.display=mot?'block':'none';
+}
+function setMotionMode(mode){
+  motionMode=mode==='abs'?'abs':'delta';
+  document.querySelectorAll('#motion-scale button').forEach(b=>b.classList.toggle('on',b.dataset.mode===motionMode));
+  if($('motion-zoom-hint')) $('motion-zoom-hint').textContent=motionMode==='delta'?('Zoom ±'+MOTION_DELTA_MIN_DB+' dB um Baseline'):'absolute dBm (auto-Zoom)';
+  if(lastMotion) renderMotion(lastMotion);
+}
+function ensureMotionPoll(on){
+  if(on){
+    if(!motionPoll){loadMotion(); motionPoll=setInterval(loadMotion,1000)}
+  }else if(motionPoll){
+    clearInterval(motionPoll); motionPoll=null;
+  }
+}
+function loadMotion(){
+  // Prefer session motion ring (phased) when active / has samples; else always-on fine ring.
+  const sess=(window._lastStatus&&window._lastStatus.rf&&window._lastStatus.rf.session)||{};
+  const useSess=!!(sess.motionSensitivity&&((sess.active&&(sess.motionRssiCount||0)>0)||(!sess.active&&(sess.motionRssiCount||0)>10)));
+  const url=useSess?'/api/session/motion?n=300':'/api/rf/ownlink?n=300';
+  jget(url).then(d=>{
+    d._source=useSess?'session':'ownlink';
+    lastMotion=d;
+    renderMotion(d);
+  }).catch(()=>{});
+}
+function median(arr){
+  if(!arr||!arr.length) return null;
+  const s=arr.slice().sort((a,b)=>a-b);
+  const m=Math.floor(s.length/2);
+  return s.length%2?s[m]:(s[m-1]+s[m])/2;
+}
+function renderMotion(d){
+  if(!d||!$('c-motion')) return;
+  const phases=d.phases||[];
+  const samples=d.samples||[];
+  const cal=phases.find(p=>p.id==='CAL'||p.id==='R0');
+  const walks=phases.filter(p=>p.id==='W1'||p.id==='W2'||p.id==='R1'||p.id==='R3');
+  const ys=samples.map(r=>Number(r[1]));
+  const calMean=cal&&cal.motionN?Number(cal.motionMeanRssi):null;
+  const calStd=cal&&cal.motionN?Number(cal.motionStdRssi):null;
+  const base=calMean!=null?calMean:median(ys);
+  let last=ys.length?ys[ys.length-1]:null;
+  let liveDelta=(last!=null&&base!=null)?(last-base):null;
+  let exc=null;
+  if(base!=null&&ys.length){
+    exc=Math.max.apply(null,ys.map(v=>Math.abs(v-base)));
+  }
+  if(calMean!=null&&walks.length){
+    let mx=0;
+    walks.forEach(w=>{
+      if(w.motionN>0){
+        mx=Math.max(mx,Math.abs(Number(w.motionMinRssi)-calMean),Math.abs(Number(w.motionMaxRssi)-calMean));
+      }
+    });
+    if(mx) exc=mx;
+  }
+  const meta=[];
+  meta.push(d._source==='session'?'Session':'Live');
+  meta.push((d.count||0)+'/'+(d.capacity||'?')+' · total '+(d.total||0));
+  if(d.phase) meta.push('Phase '+d.phase);
+  if(d.intervalMs) meta.push(d.intervalMs+' ms');
+  if(base!=null) meta.push('Baseline '+base.toFixed(1)+' dBm');
+  if($('motion-meta')) $('motion-meta').textContent=meta.join(' · ');
+  if($('motion-kpis')){
+    let html='';
+    if(last!=null) html+=kpi(last,'dBm','Live');
+    if(liveDelta!=null) html+=kpi((liveDelta>=0?'+':'')+liveDelta.toFixed(1),'dB','Δ Live');
+    if(cal&&cal.motionN){
+      html+=kpi(Number(cal.motionMeanRssi).toFixed(1),'dBm','Ruhe μ');
+      html+=kpi(Number(cal.motionStdRssi).toFixed(2),'dB','Ruhe σ');
+    }else if(base!=null&&!(cal&&cal.motionN)){
+      html+=kpi(base.toFixed(1),'dBm','Baseline');
+    }
+    if(exc!=null) html+=kpi(exc.toFixed(1),'dB','max |Δ|');
+    const sig=calStd!=null?calStd:0.15;
+    if(exc!=null) html+=kpi((exc/Math.max(sig,0.15)).toFixed(1),'','SNR');
+    $('motion-kpis').innerHTML=html||'<div class="meta">warte auf Samples…</div>';
+  }
+  drawMotionChart(samples, phases, base, calStd);
+}
+function drawMotionChart(samples, phases, base, calStd){
+  const c=$('c-motion'); if(!c) return;
+  const w=c.width=c.clientWidth||320, h=c.height=200;
+  const ctx=c.getContext('2d'); ctx.clearRect(0,0,w,h);
+  ctx.strokeStyle='#1c2a24'; ctx.lineWidth=1; ctx.beginPath();
+  for(let i=0;i<5;i++){ctx.moveTo(0,h*i/4);ctx.lineTo(w,h*i/4)} ctx.stroke();
+  if(!samples||samples.length<2){
+    ctx.fillStyle='#8aa094'; ctx.fillText('warte auf Own-Link-Samples…',10,h/2); return;
+  }
+  const ys=samples.map(r=>Number(r[1]));
+  const ref=base!=null?base:median(ys);
+  const useDelta=motionMode==='delta'&&ref!=null;
+  const plot=useDelta?ys.map(v=>v-ref):ys.slice();
+  let lo, hi;
+  if(useDelta){
+    let peak=Math.max.apply(null,plot.map(Math.abs));
+    let lim=Math.max(MOTION_DELTA_MIN_DB, peak*1.15);
+    if(calStd!=null) lim=Math.max(lim, calStd*4);
+    lo=-lim; hi=lim;
+  }else{
+    lo=Math.min.apply(null,plot); hi=Math.max.apply(null,plot);
+    if(ref!=null){lo=Math.min(lo,ref-MOTION_DELTA_MIN_DB); hi=Math.max(hi,ref+MOTION_DELTA_MIN_DB)}
+    if(hi-lo<MOTION_DELTA_MIN_DB*2){const mid=(lo+hi)/2; lo=mid-MOTION_DELTA_MIN_DB; hi=mid+MOTION_DELTA_MIN_DB}
+    const pad=Math.max(0.5,(hi-lo)*0.08); lo-=pad; hi+=pad;
+  }
+  const t0=samples[0][0], t1=samples[samples.length-1][0], span=Math.max(1,t1-t0);
+  const xAt=t=>((t-t0)/span)*w;
+  const yAt=v=>h-((v-lo)/(hi-lo))*h;
+  const phaseColor=id=>{
+    if(id==='CAL'||id==='R0'||id==='R2'||id==='R4') return 'rgba(138,160,148,.12)';
+    if(id==='W1'||id==='R1') return 'rgba(240,180,41,.18)';
+    if(id==='W2'||id==='R3') return 'rgba(45,212,168,.16)';
+    return 'transparent';
+  };
+  let segStart=0;
+  for(let i=1;i<=samples.length;i++){
+    const prev=samples[i-1][2];
+    const cur=i<samples.length?samples[i][2]:null;
+    if(i===samples.length||cur!==prev){
+      if(prev!=null&&prev>=0&&phases[prev]){
+        const x0=xAt(samples[segStart][0]), x1=xAt(samples[i-1][0]);
+        ctx.fillStyle=phaseColor(phases[prev].id);
+        ctx.fillRect(x0,0,Math.max(1,x1-x0),h);
+      }
+      segStart=i;
+    }
+  }
+  // σ band around baseline (delta: around 0)
+  if(calStd!=null&&calStd>0){
+    const band=useDelta?calStd:calStd;
+    const mid=useDelta?0:ref;
+    const y1=yAt(mid-band), y2=yAt(mid+band);
+    ctx.fillStyle='rgba(138,160,148,.15)';
+    ctx.fillRect(0,Math.min(y1,y2),w,Math.abs(y2-y1));
+  }
+  // baseline / zero
+  const baseY=yAt(useDelta?0:ref);
+  ctx.strokeStyle='rgba(138,160,148,.85)'; ctx.setLineDash([4,4]); ctx.beginPath();
+  ctx.moveTo(0,baseY); ctx.lineTo(w,baseY); ctx.stroke(); ctx.setLineDash([]);
+  // ±2 dB guides in delta mode
+  if(useDelta){
+    ctx.strokeStyle='rgba(240,180,41,.25)'; ctx.setLineDash([2,4]);
+    ;[-2,2].forEach(g=>{const y=yAt(g); ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke()});
+    ctx.setLineDash([]);
+  }
+  ctx.beginPath(); ctx.strokeStyle='#2dd4a8'; ctx.lineWidth=2;
+  plot.forEach((v,i)=>{
+    const x=xAt(samples[i][0]), y=yAt(v);
+    i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+  });
+  ctx.stroke();
+  ctx.fillStyle='#2dd4a8'; ctx.font='11px IBM Plex Mono,monospace';
+  const lastV=plot[plot.length-1];
+  ctx.fillText(useDelta?((lastV>=0?'+':'')+lastV.toFixed(1)+' dB'):(ys[ys.length-1].toFixed(0)+' dBm'),8,16);
+  ctx.fillStyle='#8aa094';
+  ctx.fillText(useDelta?(hi.toFixed(1)+' / '+lo.toFixed(1)):(hi.toFixed(0)+' / '+lo.toFixed(0)),8,h-6);
 }
 function sessStart(){
   jpost('/api/session/start',{
@@ -845,10 +1020,11 @@ function sessStart(){
     $('sess-status').textContent=d.ok?('aktiv · '+(s.profile||'')):(d.error||'Fehler');
     if($('sess-phases')) $('sess-phases').style.display=(d.ok&&s.characterization)?'flex':'none';
     sessProfileChanged();
+    ensureMotionPoll(true); loadMotion();
   })
 }
-function sessPhase(id,note){jpost('/api/session/phase',{id:id,note:note||''}).then(d=>{$('sess-status').textContent=d.ok?('phase '+id):'Phase-Fehler'})}
-function sessStop(){jpost('/api/session/stop',{}).then(d=>{const s=d.session||{};$('sess-status').textContent='gestoppt · '+(s.sampleCount||0)+' Samples'; if($('sess-phases'))$('sess-phases').style.display='none'})}
+function sessPhase(id,note){jpost('/api/session/phase',{id:id,note:note||''}).then(d=>{$('sess-status').textContent=d.ok?('phase '+id):'Phase-Fehler'; if(d.ok) loadMotion()})}
+function sessStop(){jpost('/api/session/stop',{}).then(d=>{const s=d.session||{};$('sess-status').textContent='gestoppt · '+(s.sampleCount||0)+' Samples'; if($('sess-phases'))$('sess-phases').style.display='none'; if($('sess-motion-hint'))$('sess-motion-hint').style.display='none'; loadMotion()})}
 function downloadJson(name,obj){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}));a.download=name;a.click()}
 function sessExport(){jget('/api/session/export').then(d=>downloadJson('rfmon-session.json',d))}
 function snapExport(){jget('/api/rf/snapshot').then(d=>downloadJson('rfmon-coexistence-snapshot.json',d))}

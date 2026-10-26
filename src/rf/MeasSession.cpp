@@ -275,6 +275,30 @@ void MeasSession::appendStatusJson(JsonObject target) const {
         target["remainingS"] = elapsed >= durationS_ ? 0 : (durationS_ - elapsed);
         target["progressPct"] = elapsed >= durationS_ ? 100 : (elapsed * 100UL) / durationS_;
     }
+    // Compact phase list (ids + motion stats) for UI — no sample ring.
+    if (phaseCount_ > 0) {
+        JsonArray ph = target["phases"].to<JsonArray>();
+        for (uint8_t i = 0; i < phaseCount_; i++) {
+            const Phase& p = phases_[i];
+            JsonObject o = ph.add<JsonObject>();
+            o["id"] = p.id;
+            o["note"] = p.note;
+            o["open"] = p.open;
+            o["n"] = p.n;
+            o["motionN"] = p.motionN;
+            if (p.motionN > 0) {
+                double n = (double)p.motionN;
+                double mean = p.motionSum / n;
+                double var = (p.motionSumSq / n) - (mean * mean);
+                if (var < 0) var = 0;
+                o["motionMeanRssi"] = mean;
+                o["motionStdRssi"] = sqrt(var);
+                o["motionMinRssi"] = p.motionMin;
+                o["motionMaxRssi"] = p.motionMax;
+                o["motionRangeDb"] = (int)p.motionMax - (int)p.motionMin;
+            }
+        }
+    }
     if (sampleCount_ == 0) return;
     float n = (float)sampleCount_;
     target["avgScore"] = sumScore_ / n;
@@ -286,7 +310,40 @@ void MeasSession::appendStatusJson(JsonObject target) const {
     target["maxQuality"] = maxQuality_;
 }
 
-void MeasSession::appendExportJson(JsonObject target) const {
+void MeasSession::appendMotionLiveJson(JsonObject target, size_t maxSamples) const {
+    target["active"] = active_;
+    target["motionSensitivity"] = motionSensitivity_;
+    target["intervalMs"] = motionRssiIntervalMs_;
+    target["capacity"] = (uint32_t)kMaxMotionRssi;
+    target["count"] = (uint32_t)motionCount_;
+    target["total"] = motionTotal_;
+    target["phase"] = currentPhaseId_;
+
+    JsonArray ph = target["phases"].to<JsonArray>();
+    for (uint8_t i = 0; i < phaseCount_; i++) {
+        appendPhaseJson(ph.add<JsonObject>(), phases_[i]);
+    }
+
+    if (motionCount_ == 0 || maxSamples == 0) {
+        target["samples"] = JsonArray();
+        return;
+    }
+    size_t n = motionCount_;
+    if (n > maxSamples) n = maxSamples;
+    target["window"] = (uint32_t)n;
+    JsonArray ms = target["samples"].to<JsonArray>();
+    for (size_t i = 0; i < n; i++) {
+        size_t idx = (motionHead_ + kMaxMotionRssi - n + i) % kMaxMotionRssi;
+        const MotionSample& m = motionRing_[idx];
+        JsonArray row = ms.add<JsonArray>();
+        row.add(m.uptimeMs);
+        row.add(m.rssi);
+        row.add(m.phaseIdx == 255 ? -1 : (int)m.phaseIdx);
+        row.add((m.flags & 0x01) != 0 ? 1 : 0);
+    }
+}
+
+void MeasSession::appendExportJson(JsonObject target, bool includeMotionSamples) const {
     appendStatusJson(target);
     target["scoreVersion"] = RFMON_SCORE_VERSION;
     target["fwVersion"] = FW_VERSION;
@@ -302,6 +359,8 @@ void MeasSession::appendExportJson(JsonObject target) const {
     prof["motionSensitivity"] = motionSensitivity_;
     prof["motionRssiIntervalMs"] = motionRssiIntervalMs_;
 
+    // Full phase aggregates (status already has a compact copy — overwrite).
+    target.remove("phases");
     JsonArray ph = target["phases"].to<JsonArray>();
     for (uint8_t i = 0; i < phaseCount_; i++) {
         appendPhaseJson(ph.add<JsonObject>(), phases_[i]);
@@ -337,6 +396,10 @@ void MeasSession::appendExportJson(JsonObject target) const {
     motion["capacity"] = (uint32_t)kMaxMotionRssi;
     motion["count"] = (uint32_t)motionCount_;
     motion["total"] = motionTotal_;
+    if (!includeMotionSamples) {
+        motion["samplesOmitted"] = true;
+        return;
+    }
     JsonArray ms = motion["samples"].to<JsonArray>();
     for (size_t i = 0; i < motionCount_; i++) {
         size_t idx = (motionHead_ + kMaxMotionRssi - motionCount_ + i) % kMaxMotionRssi;

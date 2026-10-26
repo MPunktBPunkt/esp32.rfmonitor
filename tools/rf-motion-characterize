@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Analyze motion-sensitivity session exports (high-rate own-link RSSI).
 
-Expects phases R0/R2/R4 = stationary, R1/R3 = walk-by.
+Default protocol: CAL = rest calibration, W1/W2 = walk-by (W2 optional).
+Legacy R0–R4 still accepted (R0/R2/R4 rest, R1/R3 walk).
+
 Does NOT claim person detection — reports FACT metrics only.
 
 Usage:
@@ -17,6 +19,17 @@ import math
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+
+REST_IDS = ("CAL", "R0", "R2", "R4")
+WALK_IDS = ("W1", "W2", "R1", "R3")
+# Preferred baseline for each walk phase.
+WALK_BASELINE = {
+    "W1": ("CAL", "R0"),
+    "W2": ("CAL", "R0", "R2"),
+    "R1": ("R0", "CAL"),
+    "R3": ("R2", "CAL", "R0"),
+}
 
 
 def _percentile(sorted_vals: List[float], p: float) -> float:
@@ -85,42 +98,46 @@ def _by_phase(rows: List[Dict[str, Any]]) -> Dict[str, List[float]]:
 def _excursion(walk: List[float], baseline_mean: float) -> Dict[str, float]:
     if not walk:
         return {}
-    # signed dips below baseline (body shadowing usually weakens RSSI → more negative)
     deltas = [v - baseline_mean for v in walk]
     abs_deltas = [abs(d) for d in deltas]
     return {
         "max_abs_excursion_db": max(abs_deltas),
-        "max_drop_db": min(deltas),  # most negative relative to baseline
+        "max_drop_db": min(deltas),
         "max_rise_db": max(deltas),
         "median_abs_db": _percentile(sorted(abs_deltas), 50),
     }
 
 
+def _pick_baseline(by: Dict[str, List[float]], wid: str, rest_fallback: Dict[str, float]) -> Tuple[float, float]:
+    for cand in WALK_BASELINE.get(wid, ("CAL", "R0")):
+        if cand in by:
+            st = _stats(by[cand])
+            return st.get("mean", 0.0), st.get("std", 0.0) or 1e-6
+    return rest_fallback.get("mean", 0.0), rest_fallback.get("std", 0.0) or 1e-6
+
+
 def analyze(path: Path, verbose: bool = True) -> Dict[str, Any]:
     data, rows = _load_motion(path)
     by = _by_phase(rows)
-    rest_ids = [p for p in ("R0", "R2", "R4") if p in by]
-    walk_ids = [p for p in ("R1", "R3") if p in by]
+    rest_ids = [p for p in REST_IDS if p in by]
+    walk_ids = [p for p in WALK_IDS if p in by]
 
     rest_vals: List[float] = []
-    for p in rest_ids:
-        rest_vals.extend(by[p])
+    # Prefer single CAL/R0 as the calibration; only merge extras if CAL/R0 absent.
+    if "CAL" in by:
+        rest_vals = list(by["CAL"])
+    elif "R0" in by:
+        rest_vals = list(by["R0"])
+    else:
+        for p in rest_ids:
+            rest_vals.extend(by[p])
     rest = _stats(rest_vals)
     base_mean = rest.get("mean", 0.0)
     base_std = rest.get("std", 0.0) or 1e-6
 
     walks: Dict[str, Any] = {}
     for wid in walk_ids:
-        # baseline for R1 = R0; for R3 = R2 if present else rest
-        if wid == "R1" and "R0" in by:
-            bmean = _stats(by["R0"]).get("mean", base_mean)
-            bstd = _stats(by["R0"]).get("std", base_std) or 1e-6
-        elif wid == "R3" and "R2" in by:
-            bmean = _stats(by["R2"]).get("mean", base_mean)
-            bstd = _stats(by["R2"]).get("std", base_std) or 1e-6
-        else:
-            bmean, bstd = base_mean, base_std
-        # Floor σ so a perfectly flat rest segment doesn't explode SNR.
+        bmean, bstd = _pick_baseline(by, wid, rest)
         bstd = max(bstd, base_std, 0.15)
         ex = _excursion(by[wid], bmean)
         snr = (ex.get("max_abs_excursion_db") or 0) / bstd if ex else 0
@@ -133,9 +150,14 @@ def analyze(path: Path, verbose: bool = True) -> Dict[str, Any]:
         }
 
     repeat = None
-    if "R1" in walks and "R3" in walks:
-        e1 = walks["R1"]["excursion"].get("max_abs_excursion_db")
-        e3 = walks["R3"]["excursion"].get("max_abs_excursion_db")
+    pair = None
+    for a, b in (("W1", "W2"), ("R1", "R3")):
+        if a in walks and b in walks:
+            pair = (a, b)
+            break
+    if pair:
+        e1 = walks[pair[0]]["excursion"].get("max_abs_excursion_db")
+        e3 = walks[pair[1]]["excursion"].get("max_abs_excursion_db")
         if e1 and e3:
             repeat = 100.0 * (1.0 - abs(e1 - e3) / max(e1, e3))
 
@@ -165,7 +187,7 @@ def analyze(path: Path, verbose: bool = True) -> Dict[str, Any]:
         print(f"# motion={path.name} board={report['board']} fw={report['fw']} n={report['motion_n']} iv={report['interval_ms']}ms")
         if rest:
             print(
-                f"  REST  n={rest['n']} mean={rest['mean']:.2f} σ={rest['std']:.2f} "
+                f"  CAL/REST  n={rest['n']} mean={rest['mean']:.2f} σ={rest['std']:.2f} "
                 f"range={rest['range']:.1f} p05/p95={rest['p05']:.1f}/{rest['p95']:.1f}"
             )
         for wid, w in walks.items():
@@ -176,9 +198,8 @@ def analyze(path: Path, verbose: bool = True) -> Dict[str, Any]:
                 f"drop={ex.get('max_drop_db', float('nan')):.2f}  "
                 f"SNR_motion={w['snr_motion']:.2f}"
             )
-        if repeat is not None:
-            print(f"  repeatability(R1↔R3) ≈ {repeat:.0f}%")
-        # Verdict framing (audit style)
+        if repeat is not None and pair:
+            print(f"  repeatability({pair[0]}↔{pair[1]}) ≈ {repeat:.0f}%")
         strong = any(w["snr_motion"] >= 3.0 for w in walks.values())
         weak = any(w["snr_motion"] >= 1.5 for w in walks.values())
         if strong:
@@ -205,7 +226,7 @@ def main() -> int:
     if len(reports) == 2 and not args.quiet:
         a, b = reports
         print("\n# Mini↔S3 correlation (max |Δ| per walk phase)")
-        for wid in ("R1", "R3"):
+        for wid in ("W1", "W2", "R1", "R3"):
             ea = ((a.get("walks") or {}).get(wid) or {}).get("excursion", {}).get("max_abs_excursion_db")
             eb = ((b.get("walks") or {}).get(wid) or {}).get("excursion", {}).get("max_abs_excursion_db")
             if ea is None or eb is None:

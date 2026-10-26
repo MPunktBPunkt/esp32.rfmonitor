@@ -40,7 +40,9 @@ public:
                     bool connected, float ownRssi, float radioDuty, uint8_t eventLevel);
     void noteMotionRssi(int8_t rssi, bool connected);
     void appendStatusJson(JsonObject target) const;
-    void appendExportJson(JsonObject target) const;
+    void appendExportJson(JsonObject target, bool includeMotionSamples = true) const;
+    // Live chart feed: last N motion samples + phase motion stats (compact).
+    void appendMotionLiveJson(JsonObject target, size_t maxSamples = 300) const;
 
 private:
     struct Sample {

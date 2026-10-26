@@ -35,13 +35,21 @@ void RfAnalyzer::loop() {
     }
     lastWifi_ = st;
 
-    // Motion-sensitivity: high-rate own-link RSSI only (score stays on 4 s cadence).
-    if (session_.active() && session_.motionSensitivity()) {
-        uint16_t iv = session_.motionRssiIntervalMs();
-        if (iv < 50) iv = 50;
+    // Fine own-link RSSI @ 200 ms for UI chart (always). Motion session shares the tick.
+    {
+        uint16_t iv = kFineRssiIntervalMs;
+        if (session_.active() && session_.motionSensitivity()) {
+            uint16_t siv = session_.motionRssiIntervalMs();
+            if (siv >= 50 && siv < iv) iv = siv;
+        }
         if (millis() - lastMotionRssiMs_ >= iv) {
             lastMotionRssiMs_ = millis();
-            session_.noteMotionRssi((int8_t)WiFi.RSSI(), st == WL_CONNECTED);
+            int8_t r = (int8_t)WiFi.RSSI();
+            bool conn = (st == WL_CONNECTED);
+            noteFineRssi(r, conn);
+            if (session_.active() && session_.motionSensitivity()) {
+                session_.noteMotionRssi(r, conn);
+            }
         }
     }
 
@@ -56,6 +64,40 @@ void RfAnalyzer::noteHub(bool ok) {
         events_->warn("system.hub_offline", "ESP-Hub nicht erreichbar", "");
     }
     hubWasOk_ = ok;
+}
+
+void RfAnalyzer::noteFineRssi(int8_t rssi, bool connected) {
+    FineRssiSample& s = fineRssi_[fineHead_];
+    s.uptimeMs = millis();
+    s.rssi = rssi;
+    s.flags = connected ? 0x01 : 0x00;
+    fineHead_ = (fineHead_ + 1) % kFineRssiCap;
+    if (fineCount_ < kFineRssiCap) fineCount_++;
+    fineTotal_++;
+}
+
+void RfAnalyzer::appendOwnLinkFineJson(JsonObject target, size_t maxSamples) const {
+    target["intervalMs"] = kFineRssiIntervalMs;
+    target["capacity"] = (uint32_t)kFineRssiCap;
+    target["count"] = (uint32_t)fineCount_;
+    target["total"] = fineTotal_;
+    if (fineCount_ == 0 || maxSamples == 0) {
+        target["samples"] = JsonArray();
+        return;
+    }
+    size_t n = fineCount_;
+    if (n > maxSamples) n = maxSamples;
+    target["window"] = (uint32_t)n;
+    JsonArray arr = target["samples"].to<JsonArray>();
+    for (size_t i = 0; i < n; i++) {
+        size_t idx = (fineHead_ + kFineRssiCap - n + i) % kFineRssiCap;
+        const FineRssiSample& s = fineRssi_[idx];
+        JsonArray row = arr.add<JsonArray>();
+        row.add(s.uptimeMs);
+        row.add(s.rssi);
+        row.add(-1);  // no session phase
+        row.add((s.flags & 0x01) != 0 ? 1 : 0);
+    }
 }
 
 void RfAnalyzer::putProxy(JsonObject parent, const char* key, uint8_t value, const char* basis) {
