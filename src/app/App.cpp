@@ -228,7 +228,9 @@ void App::handleEvents() {
 }
 
 void App::handleMain() {
-    server.send_P(200, "text/html", PAGE_MAIN);
+    server.sendHeader(F("Content-Encoding"), F("gzip"));
+    server.sendHeader(F("Cache-Control"), F("no-store"));
+    server.send_P(200, "text/html", (PGM_P)PAGE_MAIN_GZ, PAGE_MAIN_GZ_LEN);
 }
 
 void App::handleRoot() {
