@@ -33,6 +33,9 @@ void App::begin() {
     Serial.printf("[BOOT] reset reason %d\n", (int)esp_reset_reason());
 
     HwCaps::begin();
+    CpuLoad::begin();
+    hwInfo.probe();
+    hwInfo.logToSerial();
     TimeBase::begin();
     config.begin();
     events.begin();
@@ -146,8 +149,11 @@ void App::buildStatusJson(JsonDocument& doc) {
     doc["uptime"] = NetUtil::fmtUptime(TimeBase::uptimeS());
     doc["uptimeS"] = TimeBase::uptimeS();
     TimeBase::appendJson(doc["time"].to<JsonObject>());
-    doc["heap"] = ESP.getFreeHeap();
-    doc["sketch"] = ESP.getFreeSketchSpace();
+    doc["heap"] = hwInfo.freeHeap();
+    doc["psram"] = hwInfo.freePsram();
+    doc["psramSize"] = hwInfo.psramSize();
+    doc["sketch"] = hwInfo.freeSketchSpace();
+    doc["sketchUsed"] = hwInfo.sketchSize();
     doc["hub"] = config.hubHost + ":" + String(config.hubPort);
     doc["interval"] = config.heartbeatIntervalS;
     doc["version"] = FW_VERSION;
@@ -156,6 +162,17 @@ void App::buildStatusJson(JsonDocument& doc) {
     doc["firstRunDone"] = config.firstRunDone;
     doc["opMode"] = config.opMode;
     doc["bleEnabled"] = config.bleEnabled;
+    doc["hwSummary"] = hwInfo.summaryLine();
+    if (hwInfo.moduleGuess()[0]) doc["module"] = hwInfo.moduleGuess();
+    doc["flashKb"] = hwInfo.flashSizeKb();
+    doc["flashRealMb"] = (int)(hwInfo.flashBytesReal() >> 20);
+    doc["cpu0"] = CpuLoad::core0Percent();
+    if (CpuLoad::core1Percent() >= 0) {
+        doc["cpu1"] = CpuLoad::core1Percent();
+        doc["cpu"] = (CpuLoad::core0Percent() + CpuLoad::core1Percent()) / 2;
+    } else {
+        doc["cpu"] = CpuLoad::core0Percent();
+    }
     HwCaps::appendJson(doc["hw"].to<JsonObject>());
     analyzer.appendStatusJson(doc["rf"].to<JsonObject>());
     JsonObject ios = doc["ios"].to<JsonObject>();
@@ -172,8 +189,10 @@ void App::buildHeartbeat(JsonDocument& doc) {
     doc["rssi"] = WiFi.RSSI();
     doc["uptime"] = TimeBase::uptimeS();
     TimeBase::appendJson(doc["time"].to<JsonObject>());
-    doc["freeHeap"] = ESP.getFreeHeap();
-    doc["freeSketch"] = ESP.getFreeSketchSpace();
+    doc["freeHeap"] = hwInfo.freeHeap();
+    doc["freeSketch"] = hwInfo.freeSketchSpace();
+    doc["freePsram"] = hwInfo.freePsram();
+    doc["psramSize"] = hwInfo.psramSize();
     doc["fwType"] = "rfmonitor";
     doc["board"] = RFMON_BOARD_ID;
     doc["location"] = config.locationName;
@@ -646,12 +665,14 @@ void App::loop() {
     server.handleClient();
     if (!radioOnWorker_) radioTick();
     hub.loop();
+    CpuLoad::poll();
     TimeBase::loop();
     if (analyzer.session().loopAutoStop()) {
         restoreScanIntervals();
         events.info("session.stop", "Mess-Session Auto-Stop", analyzer.session().profileId());
     }
 
+    // Re-sample after hub.loop(): lastSuccessMs may be newer than a stale `now`.
     unsigned long now = millis();
     if (now - lastSse_ >= 4000UL) {
         lastSse_ = now;

@@ -9,6 +9,8 @@
 #include "core/EventLog.h"
 #include "core/HistoryStore.h"
 #include "core/HubClient.h"
+#include "esphub/CpuLoad.h"
+#include "esphub/HardwareInfo.h"
 #include "rf/RfScanner.h"
 #include "rf/BleTracker.h"
 #include "rf/RfAnalyzer.h"
@@ -22,6 +24,7 @@ public:
     EventLog events;
     HistoryStore history;
     HubClient hub;
+    HardwareInfo hwInfo;
     RfScanner scanner;
     BleTracker ble;
     RfAnalyzer analyzer;

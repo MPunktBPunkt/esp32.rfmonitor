@@ -151,12 +151,15 @@ tr.own{background:rgba(45,212,168,.08)}
         <div class="panel" style="margin-top:14px">
           <h3>Geraet</h3>
           <table>
+            <tr><td>Hardware</td><td id="d-hw" style="font-size:11px;line-height:1.4;color:var(--muted)">-</td></tr>
             <tr><td>Chip / Board</td><td id="d-board">-</td></tr>
             <tr><td>MAC</td><td class="mono" id="d-mac">-</td></tr>
             <tr><td>IP</td><td class="mono" id="d-ip">-</td></tr>
             <tr><td>SSID</td><td id="d-ssid">-</td></tr>
             <tr><td>Uptime</td><td id="d-uptime">-</td></tr>
             <tr><td>Hub</td><td id="d-hubok">-</td></tr>
+            <tr><td>CPU</td><td id="d-cpu">-</td></tr>
+            <tr><td>Flash / OTA</td><td id="d-flash">-</td></tr>
           </table>
           <div style="margin-top:12px" class="meta">RAM <span id="d-heap">-</span></div>
           <div class="bar" style="margin-top:4px"><i id="b-heap"></i></div>
@@ -554,12 +557,21 @@ function applyStatus(s){
   $('h-hw').textContent=(hw.cores||'?')+'C'+(hw.psram?' · PSRAM':' · RAM')+(hw.workerRunning?' · RF@0':'')+(al.any?' · ALERT':'');
   $('h-loc').textContent=s.location||'';
   $('h-ch').textContent=s.channel!=null?s.channel:'-';
-  $('d-board').textContent=(s.chip||'')+' · '+(s.boardLabel||s.board||'');
+  $('d-hw').textContent=s.hwSummary||((s.chip||'')+' · '+(s.boardLabel||s.board||''));
+  $('d-board').textContent=(s.chip||'')+' · '+(s.boardLabel||s.board||'')+(s.module?(' · '+s.module):'');
   $('d-mac').textContent=s.mac||'';
   $('d-ip').innerHTML=s.ip?'<a href="http://'+s.ip+'/">'+s.ip+'</a>':'-';
   $('d-ssid').textContent=s.ssid||'-';
   $('d-uptime').textContent=s.uptime||'-';
   $('d-hubok').textContent=s.hubEnabled?(s.hubOk?'online · '+(s.hub||''):'warte · '+(s.hub||'')):'deaktiviert';
+  const c0=s.cpu0,c1=s.cpu1,cav=s.cpu;
+  let cpuTxt=(typeof cav==='number'?cav+'%':'—');
+  if(typeof c0==='number'&&typeof c1==='number') cpuTxt='Ø '+cav+'% (CPU0 '+c0+'% · CPU1 '+c1+'%)';
+  else if(typeof c0==='number') cpuTxt=c0+'%';
+  $('d-cpu').textContent=cpuTxt;
+  const fMb=s.flashRealMb||Math.round((s.flashKb||0)/1024);
+  const sk=s.sketch||0, used=s.sketchUsed||0;
+  $('d-flash').textContent=(fMb?fMb+' MiB':'?')+' · OTA frei '+Math.round(sk/1024)+' KB'+(used?(' · FW '+Math.round(used/1024)+' KB'):'');
   const hp=s.heap||0,hpct=Math.min(100,Math.round(hp/3276));
   $('d-heap').textContent=Math.round(hp/1024)+' KB'+(hw.psram?' · PSRAM '+Math.round((hw.psramFree||0)/1024)+' KB':'');
   $('b-heap').style.width=hpct+'%';
